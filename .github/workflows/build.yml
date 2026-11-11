@@ -1,0 +1,112 @@
+name: Build Pico-ASHA Firmware
+
+on:
+    push:
+    pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+    PICO_SDK_COMMIT_HASH: a1438dff1d38bd9c65dbd693f0e5db4b9ae91779
+    TINYUSB_TAG: "0.20.0"
+
+jobs:
+    build_firmware:
+        strategy:
+          matrix:
+            board: ["pico_w", "pico2_w"]
+        name: Build Pico-ASHA for ${{ matrix.board }}
+        runs-on: ubuntu-24.04
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v6
+              with:
+                path: pico-asha
+
+            - name: Checkout Pico SDK
+              uses: actions/checkout@v6
+              with:
+                repository: raspberrypi/pico-sdk
+                path: pico-sdk
+                submodules: recursive
+                ref: "${{ env.PICO_SDK_COMMIT_HASH }}"
+                fetch-depth: "0"
+
+            - name: Install dependencies
+              run: |
+                sudo apt-get update && sudo apt-get -y install cmake gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib
+            
+            - name: Configure build
+              run: |
+                mkdir -p pico-asha/build/${{ matrix.board }}
+                cd pico-asha/build/${{ matrix.board }}
+                cmake \
+                  -DPICO_SDK_PATH=${{github.workspace}}/pico-sdk \
+                  -DCMAKE_BUILD_TYPE=MinSizeRel \
+                  -DPICO_BOARD=${{ matrix.board }} \
+                  ../..
+
+            - name: Compile
+              run: |
+                cd pico-asha/build/${{ matrix.board }}
+                cmake --build .
+
+            - name: Upload UF2 and ELF binaries
+              uses: actions/upload-artifact@v4
+              with:
+                name: pico-asha-firmware-${{ matrix.board }}
+                path: pico-asha/build/${{ matrix.board }}/pico_asha.[ue][fl][2f]
+
+    build_gui_windows:
+        name: Build GUI for Windows
+        runs-on: windows-2022
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+            
+            - name: Install Qt
+              uses: jurplel/install-qt-action@v4.2.1
+              with:
+                version: '6.8.3'
+                host: 'windows'
+                target: 'desktop'
+                arch: 'win64_msvc2022_64'
+                modules: 'qtserialport'
+                cache: 'true'
+                cache-key-prefix: 'install-qt-action'
+                setup-python: 'true'
+                set-env: 'true'
+            
+            - name: Setup VS dev cmd
+              uses: ilammy/msvc-dev-cmd@v1.13.0
+
+            - name: Configure cmake (using Ninja)
+              run: |
+                cd gui
+                md build
+                cd build
+                cmake -DCMAKE_BUILD_TYPE=Release -G "Ninja" ..
+            
+            - name: Compile GUI
+              run: |
+                cd gui\build
+                cmake --build .
+
+            - name: Install GUI to staging directory
+              run: |
+                cd gui\build
+                cmake --install . --prefix "$pwd\PicoASHAGui-Installed\PicoASHAGui"
+
+            - name: Remove uneeded libraries from package
+              run: |
+                cd gui\build\PicoASHAGui-Installed\PicoASHAGui\bin
+                del dxcompiler.dll
+                del dxil.dll
+
+            - name: Upload package
+              uses: actions/upload-artifact@v4
+              with:
+                name: pico-asha-gui-win64
+                path: gui/build/PicoASHAGui-Installed/PicoASHAGui
