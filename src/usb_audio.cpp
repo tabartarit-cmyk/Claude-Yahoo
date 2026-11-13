@@ -93,7 +93,13 @@ static constexpr uint32_t silence_timeout = 10'000ul;
 // straddle each other.  Treat only a sustained lack of complete USB frames as
 // the host having stopped audio, rather than stopping an ASHA stream on a
 // momentary underrun.
-static constexpr int64_t audio_packet_timeout_us = 5'000;
+//
+// The host also stops sending frames for a while whenever the PC's sound
+// pauses: seeking in a video, the end of a track, a switch to another player.
+// Ending the ASHA stream (ACP Stop) at each of those gaps made the aids drop
+// out, so keep the stream alive for this long and encode silence in the
+// meantime. Only a gap longer than this counts as the host having stopped audio.
+static constexpr int64_t audio_packet_timeout_us = 10'000'000;
 static absolute_time_t last_pcm_packet_time = 0;
 
 USBSettings usb_settings = {};

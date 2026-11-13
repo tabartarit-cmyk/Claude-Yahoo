@@ -239,6 +239,21 @@ void HearingAid::process()
                     if (ha->other && ha->other->is_streaming()) {
                         ha->other->stop_request_from_other = true;
                     }
+                    // A freshly ready aid has nothing to stop, so drop any stop
+                    // request and ACP bookkeeping left over from a previous stream.
+                    ha->stop_request_from_other = false;
+                    ha->acp_wait_ticks = 0U;
+                    ha->acp_write_acked = false;
+                    ha->hold_start_ticks = 0U;
+                    if constexpr (second_aid_wait_ticks > 0U) {
+                        // A full set was paired before but the second aid is not
+                        // ready yet: give it a chance to arrive so that both aids
+                        // can start together (see second_aid_wait_ticks).
+                        if (runtime_settings.get_full_set_paired()
+                            && !(ha->other && ha->other->process_state == Audio)) {
+                            ha->hold_start_ticks = second_aid_wait_ticks;
+                        }
+                    }
                     ha->audio_state = AudioState::Ready;
                 } else {
                     // MFI probe: keep the link up, there is no audio transport
@@ -967,15 +982,22 @@ void HearingAid::handle_acp_write(PACKET_HANDLER_PARAMS)
         if (att_status != ATT_ERROR_SUCCESS) {
             //LOG_ERROR("%s: ACP write failed with status: %s", ha->get_side_str(), att_err_str(att_status));
             add_event_to_buffer(ha->conn_id, EventPacket(ev_type, StatusType::ATTStatus, att_status));
-            bool const was_stopping = ha->audio_state == AudioState::Stop;
-            ha->audio_state = AudioState::Ready;
-            if (was_stopping && (!ha->other || !ha->other->is_streaming())) {
-                asha_audio_set_encoding_enabled(false);
-                asha_audio_request_stream_reset();
+            if (ha->audio_state == AudioState::Stop) {
+                // The aid cannot confirm a stop it did not accept. Leave the Stop
+                // state the same way as for a confirmed stop, so that a pending
+                // stop request from the other aid cannot be left behind.
+                ha->finish_stop();
+            } else {
+                ha->audio_state = AudioState::Ready;
             }
         } else {
             add_event_to_buffer(ha->conn_id, EventPacket(ev_type));
+            ha->acp_write_acked = true;
             if (ha->audio_state == AudioState::Stop) {
+                // From here on the aid has accepted the stop. Its ASP
+                // notification gets stop_notify_wait_ticks to arrive (see
+                // process_audio()).
+                ha->acp_wait_ticks = 0U;
                 if (ha->other && ha->other->is_streaming()) {
                     ha->other->send_acp_status(ACPStatus::other_disconnected);
                 }
@@ -1073,6 +1095,9 @@ void HearingAid::handle_l2cap_cbm(PACKET_HANDLER_PARAMS)
             ha->audio_tx_pending_ticks = 0U;
             ha->audio_sdu_gap_ticks = 0U;
             ha->l2cap_close_ticks = 0U;
+            ha->stop_request_from_other = false;
+            ha->acp_wait_ticks = 0U;
+            ha->acp_write_acked = false;
             ha->audio_state = AudioState::AudioUnset;
             // Keep the ACL connection, then create a fresh CoC with the
             // existing PSM and service discovery data.
@@ -1173,14 +1198,7 @@ void HearingAid::handle_gatt_notification(PACKET_HANDLER_PARAMS)
                         ha->first_audio_send = true;
                     } else if (ha->audio_state == AudioState::Stop) {
                         //LOG_INFO("%s: Audio stop OK", ha->get_side_str());
-                        add_event_to_buffer(ha->conn_id, EventPacket(EventType::ASPStop));
-
-                        ha->stop_request_from_other = false;
-                        ha->audio_state = AudioState::Ready;
-                        if (!ha->other || !ha->other->is_streaming()) {
-                            asha_audio_set_encoding_enabled(false);
-                            asha_audio_request_stream_reset();
-                        }
+                        ha->finish_stop();
                     }
                     break;
                 case ASPStatus::unkown_command:
@@ -1242,6 +1260,19 @@ bool HearingAid::process_audio()
         ha->credits = l2cap_cbm_available_credits(ha->cid);
         switch (ha->audio_state) {
             case AudioState::Ready:
+                if constexpr (second_aid_wait_ticks > 0U) {
+                    // Optional wait for the second aid of a full set (see
+                    // second_aid_wait_ticks). It ends as soon as the other aid is
+                    // ready, so that both aids start together.
+                    if (ha->hold_start_ticks > 0U) {
+                        if (ha->other && ha->other->process_state == ProcessState::Audio) {
+                            ha->hold_start_ticks = 0U;
+                        } else {
+                            --ha->hold_start_ticks;
+                            break;
+                        }
+                    }
+                }
                 // After a zero-credit stop, wait up to the cooldown window for
                 // credits to fully replenish before restarting; starting at low
                 // credit counts immediately re-drains and produces audible
@@ -1400,6 +1431,36 @@ bool HearingAid::process_audio()
                     }
                 }
                 break;
+            case AudioState::Stop:
+            case AudioState::Stop | AudioState::AudioBusy:
+                // Waiting for the aid to confirm an ACP Stop. Some aids never
+                // send the ASP notification (see stop_notify_wait_ticks), and
+                // waiting for it forever would leave this aid, and the other one
+                // through stop_request_from_other, unable to stream again. Once
+                // the ACP Stop write has been acknowledged, allow the
+                // notification a short grace period and then continue as if it
+                // had arrived. If not even the acknowledgement shows up, give up
+                // after stop_max_ticks.
+                ++ha->acp_wait_ticks;
+                if (ha->acp_write_acked && ha->acp_wait_ticks >= stop_notify_wait_ticks) {
+                    short_log(ha->conn_id, "%s", "No ASP stop, now Ready");
+                    ha->finish_stop();
+                } else if (!ha->acp_write_acked && ha->acp_wait_ticks >= stop_max_ticks) {
+                    short_log(ha->conn_id, "%s", "ACP stop t/o, now Ready");
+                    ha->finish_stop();
+                }
+                break;
+            case AudioState::Start:
+            case AudioState::Start | AudioState::AudioBusy:
+                // Counterpart of the Stop case: an aid that never answers an ACP
+                // Start with its ASP notification would stay here for good. A
+                // fresh BLE link is the only reliable way to get it going again.
+                if (++ha->acp_wait_ticks >= start_notify_timeout_ticks) {
+                    short_log(ha->conn_id, "%s", "ASP start t/o, reconnecting");
+                    ha->acp_wait_ticks = 0U;
+                    ha->disconnect();
+                }
+                break;
             default:
                 break;
         }
@@ -1549,6 +1610,8 @@ void HearingAid::send_acp_start()
 
     audio_state = AudioState::Start;
     audio_sdu_gap_ticks = 0U;
+    acp_wait_ticks = 0U;
+    acp_write_acked = false;
     acp_cmd_packet[0] = ACPOpCode::start; // Opcode
     acp_cmd_packet[1] = 1u; // G.722 codec at 16KHz
     acp_cmd_packet[2] = 0u; // Unkown audio type
@@ -1573,6 +1636,8 @@ void HearingAid::send_acp_stop()
 
     audio_state = AudioState::Stop;
     audio_sdu_gap_ticks = 0U;
+    acp_wait_ticks = 0U;
+    acp_write_acked = false;
     acp_cmd_packet[0] = ACPOpCode::stop;
     uint8_t res = gatt_client_write_value_of_characteristic(&HearingAid::handle_acp_write,
                                                             conn_handle,
@@ -1583,6 +1648,25 @@ void HearingAid::send_acp_stop()
         //LOG_ERROR("%s: ACP Write: Stop error %s", get_side_str(), bt_err_str(res));
         add_event_to_buffer(conn_id, EventPacket(EventType::ACPStop, StatusType::BtstackStatus, res));
         disconnect();
+    }
+}
+
+void HearingAid::finish_stop()
+{
+    using namespace comm;
+
+    // Single exit from AudioState::Stop. It is taken when the aid confirms the
+    // stop with its ASP notification, when the ACP Stop write fails, and when the
+    // confirmation never comes (see process_audio()). The event lets the control
+    // application show the aid as no longer streaming.
+    add_event_to_buffer(conn_id, EventPacket(EventType::ASPStop));
+
+    stop_request_from_other = false;
+    acp_wait_ticks = 0U;
+    audio_state = AudioState::Ready;
+    if (!other || !other->is_streaming()) {
+        asha_audio_set_encoding_enabled(false);
+        asha_audio_request_stream_reset();
     }
 }
 
@@ -1633,6 +1717,9 @@ void HearingAid::close_l2cap_for_recovery()
     audio_tx_pending_ticks = 0U;
     audio_sdu_gap_ticks = 0U;
     l2cap_close_ticks = 0U;
+    stop_request_from_other = false;
+    acp_wait_ticks = 0U;
+    acp_write_acked = false;
     process_state = ProcessState::CloseL2CAP;
 
     uint8_t const result = l2cap_disconnect(cid);
@@ -1681,6 +1768,9 @@ void HearingAid::reset()
     audio_sdu_gap_ticks = 0U;
     l2cap_close_ticks = 0U;
     stop_request_from_other = false;
+    acp_wait_ticks = 0U;
+    acp_write_acked = false;
+    hold_start_ticks = 0U;
 
     if (!cached) {
         memset(addr, 0U, sizeof(bd_addr_t));

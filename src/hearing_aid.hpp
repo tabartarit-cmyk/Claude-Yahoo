@@ -36,6 +36,39 @@ constexpr uint32_t audio_sdu_gap_timeout_ticks = 500;
 // BLE link rather than leaving the aid without a usable audio transport.
 constexpr uint32_t l2cap_close_stuck_timeout_ticks = 1000;
 
+// The ASHA spec has the aid answer an ACP Stop with an AudioStatusPoint (ASP)
+// notification. Some aids (seen on Starkey G Series AI) only acknowledge the
+// ATT write and never send it, while they do send one for an ACP Start. Waiting
+// for the notification forever left the aid in AudioState::Stop for good, so no
+// stream could be started again after the PC had paused its sound, and the
+// other aid was blocked too through stop_request_from_other. Once the ACP Stop
+// write is acknowledged, give the notification this long to arrive and then
+// carry on as if it had. A notification normally follows within a few
+// milliseconds. The audio loop runs every millisecond.
+constexpr uint32_t stop_notify_wait_ticks = 150;
+
+// Upper bound for the whole Stop state, in case even the acknowledgement of the
+// ACP Stop write never shows up.
+constexpr uint32_t stop_max_ticks = 1000;
+
+// An ACP Start that the aid never answers with its ASP notification would leave
+// it in AudioState::Start for good. After this long, reconnect the BLE link,
+// which is what Disable/Enable Connections in the control application does by
+// hand. The aids normally answer within a few milliseconds.
+constexpr uint32_t start_notify_timeout_ticks = 3000;
+
+// Optional: when a full left/right set has been paired before but only one aid
+// is connected, hold that aid's first ACP Start back for up to this many
+// milliseconds (audio loop ticks) while waiting for the second aid. Without it
+// the aid that connects first starts streaming at once and has to be stopped
+// and restarted together with the second one when that one arrives. 0 disables
+// the wait. Set it from the build (-DPICO_ASHA_SECOND_AID_WAIT_MS=5000) or edit
+// the default below.
+#ifndef PICO_ASHA_SECOND_AID_WAIT_MS
+#define PICO_ASHA_SECOND_AID_WAIT_MS 0
+#endif
+constexpr uint32_t second_aid_wait_ticks = PICO_ASHA_SECOND_AID_WAIT_MS;
+
 enum class Side  {Left = 0, Right = 1};
 enum class Mode  {Mono = 0, Binaural = 1};
 enum class Codec {G722_16, G722_24};
@@ -250,6 +283,15 @@ private:
 
     bool stop_request_from_other = false;
 
+    // Audio loop ticks spent in the current ACP Start/Stop transition and
+    // whether the ATT write that began it has been acknowledged by the aid.
+    uint32_t acp_wait_ticks = 0U;
+    bool acp_write_acked = false;
+
+    // Ticks left before the first ACP Start while waiting for the second aid of
+    // a full set (see second_aid_wait_ticks).
+    uint32_t hold_start_ticks = 0U;
+
     std::array<uint8_t, ASHA_SDU_SIZE_BYTES> recv_buff = {};
 
     uint16_t conn_id = comm::unset_conn_id;
@@ -278,6 +320,7 @@ private:
     void set_data_langth();
     void send_acp_start();
     void send_acp_stop();
+    void finish_stop();
     void send_acp_status(uint8_t status);
     void send_volume(int8_t volume);
     void close_l2cap_for_recovery();
