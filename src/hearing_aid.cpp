@@ -1247,19 +1247,46 @@ bool HearingAid::process_audio()
     //   exponent < 1.0 : louder at mid-slider, flatter near the top
     // Both ends of the range are preserved.
     auto shape = [min_vol, max_vol](int16_t usb_vol) -> int16_t {
-        int16_t v = std::clamp(usb_vol, min_vol, max_vol);
-        if (usb_settings.curve == ASHA_VOL_CURVE_DEFAULT || max_vol <= min_vol) {
+        int16_t const v = std::clamp(usb_vol, min_vol, max_vol);
+        uint16_t const curve = usb_settings.curve;
+        bool const power_mode = (curve & ASHA_VOL_CURVE_POWER_FLAG) != 0;
+        float const exponent = (float)(curve & ASHA_VOL_CURVE_VALUE_MASK) / 100.0f;
+        if (max_vol <= min_vol || (!power_mode && curve == ASHA_VOL_CURVE_DEFAULT)) {
             return v;
         }
         float const span = (float)(max_vol - min_vol);
         float const x = (float)(v - min_vol) / span;
-        float const y = powf(x, (float)usb_settings.curve / 100.0f);
-        return (int16_t)std::clamp((int)lroundf((float)min_vol + y * span), (int)min_vol, (int)max_vol);
+        float const t = powf(x, exponent);
+        float level;
+        if (power_mode) {
+            // Linear in power between Min (0%) and Max (100%): the power
+            // relative to Max Volume goes from p_min to 1 in a straight line.
+            float const p_min = powf(10.0f, (float)(min_vol - max_vol) / (256.0f * 10.0f));
+            float const p = p_min + t * (1.0f - p_min);
+            level = (float)max_vol + 256.0f * 10.0f * log10f(p);
+        } else {
+            level = (float)min_vol + t * span;
+        }
+        return (int16_t)std::clamp((int)lroundf(level), (int)min_vol, (int)max_vol);
     };
-    int8_t vol_l = (usb_vol_l == ASHA_USB_VOL_MUTE) ? volume_mute 
-                                                    : (int8_t)(shape(usb_vol_l) / ASHA_USB_VOL_RES);
-    int8_t vol_r = (usb_vol_r == ASHA_USB_VOL_MUTE) ? volume_mute 
-                                                    : (int8_t)(shape(usb_vol_r) / ASHA_USB_VOL_RES);
+    // The shaped level is split in two: down to the hearing aids' floor
+    // (-47.625dB) it is sent as the ASHA volume; anything lower is produced
+    // by digitally attenuating the PCM before encoding.
+    auto split = [&shape](int16_t usb_vol, int8_t& asha_vol, uint32_t& gain_q15) {
+        int16_t const level = shape(usb_vol);
+        asha_vol = (int8_t)(std::max<int16_t>(level, ASHA_USB_VOL_MIN) / ASHA_USB_VOL_RES);
+        int const below = (int)level - ASHA_USB_VOL_MIN; // negative under the ASHA floor
+        gain_q15 = (below >= 0)
+            ? ASHA_DIGITAL_GAIN_UNITY
+            : (uint32_t)lroundf(powf(10.0f, (float)below / (256.0f * 20.0f)) * (float)ASHA_DIGITAL_GAIN_UNITY);
+    };
+    int8_t vol_l = volume_mute;
+    int8_t vol_r = volume_mute;
+    uint32_t gain_l = ASHA_DIGITAL_GAIN_UNITY;
+    uint32_t gain_r = ASHA_DIGITAL_GAIN_UNITY;
+    if (usb_vol_l != ASHA_USB_VOL_MUTE) { split(usb_vol_l, vol_l, gain_l); }
+    if (usb_vol_r != ASHA_USB_VOL_MUTE) { split(usb_vol_r, vol_r, gain_r); }
+    asha_audio_set_digital_gain(gain_l, gain_r);
     
     bool pcm_is_streaming = asha_audio_get_pcm_streaming_enabled();
 

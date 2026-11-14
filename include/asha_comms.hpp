@@ -157,12 +157,14 @@ namespace comm
     {
         // USB Audio Class Version (1 or 2)
         uint16_t uac_vers;
-        // Minimum volume. Must be in range -12,192 - 0
+        // Minimum volume. Must be in range -23,040 - 0 (below -12,192 the
+        // level is produced by digital attenuation)
         int16_t  min_vol;
-        // Maximum volume. Must be in range -12,192 - 0
+        // Maximum volume. Must be in range -23,040 - 0
         int16_t  max_vol;
         // Volume curve exponent in hundredths (100 = 1.00 = unchanged,
-        // valid 20 - 500). 0 from older clients means "unchanged".
+        // valid 20 - 500). Bit 15 set = interpolate linearly in power.
+        // 0 from older clients means "unchanged".
         uint16_t reserved;
 
         bool operator==(const USBInfo&) const = default;

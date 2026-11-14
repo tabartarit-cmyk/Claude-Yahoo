@@ -47,10 +47,23 @@ extern "C" {
 #define ASHA_USB_VOL_RES      96 // 96/256 is the step between ASHA volume levels
 #define ASHA_USB_VOL_MUTE -32768
 
+// Extended lower bound for the configurable minimum volume (-90dB). Levels
+// below ASHA_USB_VOL_MIN cannot be sent to the hearing aids, so they are
+// produced by digitally attenuating the PCM signal instead.
+#define ASHA_USB_VOL_MIN_EXT -23040
+
+// Digital gain is Q15: 32768 = unity
+#define ASHA_DIGITAL_GAIN_UNITY 32768u
+
 // Volume curve exponent, in hundredths (100 = 1.00 = no change)
 #define ASHA_VOL_CURVE_DEFAULT 100u
 #define ASHA_VOL_CURVE_MIN      20u // 0.20
 #define ASHA_VOL_CURVE_MAX     500u // 5.00
+// Flag (bit 15) in the curve setting: interpolate linearly in POWER between
+// Min and Max volume (25% on the slider = 1/4 of the power at Max Volume)
+// instead of in dB. The exponent is still applied to the slider position.
+#define ASHA_VOL_CURVE_POWER_FLAG 0x8000u
+#define ASHA_VOL_CURVE_VALUE_MASK 0x7FFFu
 
 enum AshaAudioSide {
     AudioLeft,
@@ -92,6 +105,12 @@ int16_t* asha_audio_get_encoding_time_at_index(uint32_t index);
 //void asha_audio_set_curr_usb_vol(enum AshaAudioSide side, int16_t usb_volume);
 
 void asha_audio_set_curr_usb_vol(int16_t main_vol, int16_t left_vol, int16_t right_vol);
+
+/**
+ * Set the digital gain (Q15, 32768 = unity) applied to the left/right PCM
+ * before encoding. Used for levels below the hearing aids' volume floor.
+ */
+void asha_audio_set_digital_gain(uint32_t left_q15, uint32_t right_q15);
 
 /**
  * Get the current volume, as provided by USB

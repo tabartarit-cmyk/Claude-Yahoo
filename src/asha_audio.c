@@ -32,6 +32,14 @@ static atomic_uint_fast32_t write_index;
 static atomic_int_least16_t vol_m;
 static atomic_int_least16_t vol_l;
 static atomic_int_least16_t vol_r;
+static atomic_uint_fast32_t gain_l = ASHA_DIGITAL_GAIN_UNITY;
+static atomic_uint_fast32_t gain_r = ASHA_DIGITAL_GAIN_UNITY;
+
+static inline int16_t apply_gain(int16_t s, uint32_t g)
+{
+    if (g >= ASHA_DIGITAL_GAIN_UNITY) return s;
+    return (int16_t)(((int32_t)s * (int32_t)g) >> 15);
+}
 
 g722_encode_state_t enc_state_l;
 g722_encode_state_t enc_state_r;
@@ -125,20 +133,23 @@ void asha_audio_encode_1ms_pcm(struct PCMStereoSample *samples, uint16_t count)
         }
     }
 
+    uint32_t const g_l = gain_l;
+    uint32_t const g_r = gain_r;
+
     // Separate interleaved stereo samples to separate channels
     bool mono = encode_mono;
     if (mono) {
         int16_t val;
         for (unsigned int i = 0; i < count; ++i) {
-            val = (int16_t)(((int32_t)samples[i].left + (int32_t)samples[i].right) / 2);
+            val = (int16_t)(((int32_t)apply_gain(samples[i].left, g_l) + (int32_t)apply_gain(samples[i].right, g_r)) / 2);
             pcm_buff_l[buff_index] = val;
             pcm_buff_r[buff_index] = val;
             ++buff_index;
         }       
     } else {
         for (unsigned int i = 0; i < count; ++i) {
-            pcm_buff_l[buff_index] = samples[i].left;
-            pcm_buff_r[buff_index] = samples[i].right;
+            pcm_buff_l[buff_index] = apply_gain(samples[i].left, g_l);
+            pcm_buff_r[buff_index] = apply_gain(samples[i].right, g_r);
             ++buff_index;
         }
     }
@@ -197,6 +208,12 @@ void asha_audio_set_curr_usb_vol(int16_t main_vol, int16_t left_vol, int16_t rig
     vol_m = main_vol;
     vol_l = left_vol;
     vol_r = right_vol;
+}
+
+void asha_audio_set_digital_gain(uint32_t left_q15, uint32_t right_q15)
+{
+    gain_l = left_q15;
+    gain_r = right_q15;
 }
 
 int16_t asha_audio_get_curr_usb_vol(enum AshaAudioSide side)
