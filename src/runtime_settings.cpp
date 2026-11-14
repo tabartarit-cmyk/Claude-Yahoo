@@ -13,6 +13,7 @@ namespace asha
 // USB settings: scratch[1] bits  0-13 = (min_vol - ASHA_USB_VOL_MIN),
 //               scratch[1] bits 14-27 = (max_vol - ASHA_USB_VOL_MIN),
 //               scratch[1] bit  28    = (uac_version - 1).
+//               scratch[2]            = curve exponent (hundredths).
 // Scratch registers survive a watchdog reset but clear on power-on reset.
 static constexpr uint32_t SCRATCH_CMD_HCI_DUMP     = 0x41534801u; // 'A','S','H',1
 static constexpr uint32_t SCRATCH_CMD_USB_SETTINGS = 0x41534802u; // 'A','S','H',2
@@ -127,6 +128,7 @@ void RuntimeSettings::defer_usb_settings(USBSettings const& s)
           (uint32_t)(s.min_vol - ASHA_USB_VOL_MIN)          // bits 0-13
         | ((uint32_t)(s.max_vol - ASHA_USB_VOL_MIN) << 14)  // bits 14-27
         | ((uint32_t)(s.uac_version - 1u) << 28);           // bit 28
+    watchdog_hw->scratch[2] = s.curve;
 }
 
 // Called from init() after btstack_tlv_get_instance(), before get_settings().
@@ -145,6 +147,7 @@ void RuntimeSettings::apply_pending_scratch()
         s.min_vol     = (int16_t)(p & 0x3FFFu) + ASHA_USB_VOL_MIN;
         s.max_vol     = (int16_t)((p >> 14) & 0x3FFFu) + ASHA_USB_VOL_MIN;
         s.uac_version = (uint16_t)((p >> 28) & 1u) + 1u;
+        s.curve       = (uint16_t)watchdog_hw->scratch[2];
         store_tlv_tag(Tag::USBSetting, s);
         break;
     }
@@ -153,6 +156,7 @@ void RuntimeSettings::apply_pending_scratch()
     }
     watchdog_hw->scratch[0] = 0u;
     watchdog_hw->scratch[1] = 0u;
+    watchdog_hw->scratch[2] = 0u;
 }
 
 } // namespace asha

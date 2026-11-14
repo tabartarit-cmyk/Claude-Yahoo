@@ -82,6 +82,7 @@ private:
     QComboBox*   m_USBUacVersCombo;
     QSpinBox*    m_USBVolMinSpin;
     QSpinBox*    m_USBVolMaxSpin;
+    QDoubleSpinBox* m_USBVolCurveSpin;
     QPushButton* m_USBSettingsBtn;
 
     QPushButton* m_hciActionBtn;

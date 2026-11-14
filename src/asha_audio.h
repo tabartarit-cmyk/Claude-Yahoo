@@ -47,6 +47,11 @@ extern "C" {
 #define ASHA_USB_VOL_RES      96 // 96/256 is the step between ASHA volume levels
 #define ASHA_USB_VOL_MUTE -32768
 
+// Volume curve exponent, in hundredths (100 = 1.00 = no change)
+#define ASHA_VOL_CURVE_DEFAULT 100u
+#define ASHA_VOL_CURVE_MIN      20u // 0.20
+#define ASHA_VOL_CURVE_MAX     500u // 5.00
+
 enum AshaAudioSide {
     AudioLeft,
     AudioRight,

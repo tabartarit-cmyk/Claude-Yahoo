@@ -109,7 +109,8 @@ USBSettings::operator bool() const
   return (uac_version == 1 || uac_version == 2) 
           && (min_vol <= ASHA_USB_VOL_MAX && min_vol >= ASHA_USB_VOL_MIN)
           && (max_vol <= ASHA_USB_VOL_MAX && max_vol >= ASHA_USB_VOL_MIN)
-          && (max_vol >= min_vol);
+          && (max_vol >= min_vol)
+          && (curve >= ASHA_VOL_CURVE_MIN && curve <= ASHA_VOL_CURVE_MAX);
 }
 
 // Audio task pacing

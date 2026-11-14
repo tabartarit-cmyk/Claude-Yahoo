@@ -1,4 +1,6 @@
+#include <algorithm>
 #include <bitset>
+#include <cmath>
 #include <pico/assert.h>
 
 #include "hearing_aid.hpp"
@@ -322,7 +324,7 @@ void HearingAid::on_serial_host_connected()
         .uac_vers = usb_settings.uac_version,
         .min_vol = usb_settings.min_vol,
         .max_vol = usb_settings.max_vol,
-        .reserved = 0
+        .reserved = usb_settings.curve
     };
     send_usb_info_packet(usb_info);
     for (auto ha : hearing_aids) {
@@ -1237,10 +1239,27 @@ bool HearingAid::process_audio()
     // set in runtime settings
     auto min_vol = usb_settings.min_vol;
     auto max_vol = usb_settings.max_vol;
+
+    // Optional power-law volume curve. The position in the min..max dB range
+    // (what the OS slider produces) is raised to the configured exponent:
+    //   exponent = 1.0 : unchanged
+    //   exponent > 1.0 : quieter at mid-slider, steeper near the top
+    //   exponent < 1.0 : louder at mid-slider, flatter near the top
+    // Both ends of the range are preserved.
+    auto shape = [min_vol, max_vol](int16_t usb_vol) -> int16_t {
+        int16_t v = std::clamp(usb_vol, min_vol, max_vol);
+        if (usb_settings.curve == ASHA_VOL_CURVE_DEFAULT || max_vol <= min_vol) {
+            return v;
+        }
+        float const span = (float)(max_vol - min_vol);
+        float const x = (float)(v - min_vol) / span;
+        float const y = powf(x, (float)usb_settings.curve / 100.0f);
+        return (int16_t)std::clamp((int)lroundf((float)min_vol + y * span), (int)min_vol, (int)max_vol);
+    };
     int8_t vol_l = (usb_vol_l == ASHA_USB_VOL_MUTE) ? volume_mute 
-                                                    : (int8_t)(std::clamp(usb_vol_l, min_vol, max_vol) / ASHA_USB_VOL_RES);
+                                                    : (int8_t)(shape(usb_vol_l) / ASHA_USB_VOL_RES);
     int8_t vol_r = (usb_vol_r == ASHA_USB_VOL_MUTE) ? volume_mute 
-                                                    : (int8_t)(std::clamp(usb_vol_r, min_vol, max_vol) / ASHA_USB_VOL_RES);
+                                                    : (int8_t)(shape(usb_vol_r) / ASHA_USB_VOL_RES);
     
     bool pcm_is_streaming = asha_audio_get_pcm_streaming_enabled();
 
