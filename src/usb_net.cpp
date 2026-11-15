@@ -147,7 +147,8 @@ static void dhcp_recv(void*, struct udp_pcb* pcb, struct pbuf* p, const ip_addr_
     *o++ = 1;  *o++ = 4; *o++ = 255; *o++ = 255; *o++ = 255; *o++ = 0;       // subnet mask
     *o++ = 255;                                                      // end
 
-    u16_t const out_len = (u16_t)(dhcp_fixed_len + (size_t)(o - out.options));
+    // BOOTP replies are at least 300 bytes long; the rest is zero padding
+    u16_t const out_len = (u16_t)std::max<size_t>(sizeof(out), 300);
     struct pbuf* q = pbuf_alloc(PBUF_TRANSPORT, out_len, PBUF_RAM);
     if (q) {
         pbuf_take(q, &out, out_len);

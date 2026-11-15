@@ -44,7 +44,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(ENABLE_AUDIO_ENC_STATS "Enable audio downsampling and encoding statistics" OFF)
 option(ENABLE_L2CAP_TX_TRACE "Emit per-SDU L2CAP transmit handshake diagnostics" OFF)
-option(PICO_ASHA_USB_NET "Add a USB network interface (RNDIS/ECM) serving a settings web page at http://192.168.7.1" OFF)
+option(PICO_ASHA_USB_NET "Add a USB network interface (RNDIS/ECM) serving a settings web page at http://192.168.7.1" ON)
 
 # Firmware variants for the Raspberry Pi Pico 2 W. Each one is its own executable:
 #   pico_asha          ASHA only. The only variant which streams audio.
@@ -106,6 +106,26 @@ set_source_files_properties(${ASHA_SRC} src/classic_bt.cpp PROPERTIES COMPILE_OP
 if (PICO_ASHA_USB_NET)
   list(APPEND pico_asha_defines "PICO_ASHA_USB_NET=1")
   list(APPEND ASHA_SRC src/usb_net.cpp)
+
+  # The TinyUSB network class must be compiled. Some Pico SDK versions already
+  # do it; add the files only when they are not part of the TinyUSB target.
+  set(ASHA_TUSB_SRCS "")
+  foreach(_t tinyusb_device_unmarked tinyusb_device_base tinyusb_device)
+    if (TARGET ${_t})
+      get_target_property(_s ${_t} INTERFACE_SOURCES)
+      if (_s)
+        list(APPEND ASHA_TUSB_SRCS ${_s})
+      endif()
+    endif()
+  endforeach()
+  foreach(_f src/class/net/ecm_rndis_device.c src/class/net/ncm_device.c
+             src/class/net/net_device.c lib/networking/rndis_reports.c)
+    get_filename_component(_name ${_f} NAME)
+    if (EXISTS "${PICO_TINYUSB_PATH}/${_f}" AND NOT "${ASHA_TUSB_SRCS}" MATCHES "${_name}")
+      message(STATUS "Adding TinyUSB ${_f}")
+      list(APPEND ASHA_SRC "${PICO_TINYUSB_PATH}/${_f}")
+    endif()
+  endforeach()
 endif()
 
 if (ENABLE_AUDIO_ENC_STATS)
@@ -163,6 +183,7 @@ function(add_pico_asha_variant target variant_define)
   if (PICO_ASHA_USB_NET)
     # lwIP without an OS and without Wi-Fi: the network is the USB interface
     target_link_libraries(${target} pico_lwip pico_lwip_nosys)
+    target_include_directories(${target} PRIVATE ${PICO_TINYUSB_PATH}/lib/networking)
   endif()
 
   target_link_options(${target} PUBLIC -Wl,--print-memory-usage)
