@@ -47,6 +47,12 @@ extern "C" {
 #define ASHA_USB_VOL_RES      96 // 96/256 is the step between ASHA volume levels
 #define ASHA_USB_VOL_MUTE -32768
 
+// Volume range announced to the host OS (fixed). The Min/Max volume settings
+// no longer change it: they only define the level sent to the hearing aids
+// at the bottom and top of the host's volume slider.
+#define ASHA_WIN_RANGE_MIN -11808 // -123 steps (-46.1dB)
+#define ASHA_WIN_RANGE_MAX      0
+
 // Extended lower bound for the configurable minimum volume (-90dB). Levels
 // below ASHA_USB_VOL_MIN cannot be sent to the hearing aids, so they are
 // produced by digitally attenuating the PCM signal instead.

@@ -1247,15 +1247,16 @@ bool HearingAid::process_audio()
     //   exponent < 1.0 : louder at mid-slider, flatter near the top
     // Both ends of the range are preserved.
     auto shape = [min_vol, max_vol](int16_t usb_vol) -> int16_t {
-        int16_t const v = std::clamp(usb_vol, min_vol, max_vol);
+        // Slider position (0..1) seen through the fixed range announced to the OS
+        int16_t const v = std::clamp(usb_vol, (int16_t)ASHA_WIN_RANGE_MIN, (int16_t)ASHA_WIN_RANGE_MAX);
+        float const x = (float)(v - ASHA_WIN_RANGE_MIN) / (float)(ASHA_WIN_RANGE_MAX - ASHA_WIN_RANGE_MIN);
         uint16_t const curve = usb_settings.curve;
         bool const power_mode = (curve & ASHA_VOL_CURVE_POWER_FLAG) != 0;
         float const exponent = (float)(curve & ASHA_VOL_CURVE_VALUE_MASK) / 100.0f;
-        if (max_vol <= min_vol || (!power_mode && curve == ASHA_VOL_CURVE_DEFAULT)) {
-            return v;
+        if (max_vol <= min_vol) {
+            return min_vol;
         }
         float const span = (float)(max_vol - min_vol);
-        float const x = (float)(v - min_vol) / span;
         float const t = powf(x, exponent);
         float level;
         if (power_mode) {

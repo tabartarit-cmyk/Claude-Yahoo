@@ -310,14 +310,14 @@ static bool audio10_get_req_entity(uint8_t rhport, tusb_control_request_t const 
           case AUDIO10_CS_REQ_GET_MIN:
             TU_LOG2("    Get Volume min of channel: %u\r\n", channelNum);
             {
-              int16_t min = usb_settings.min_vol;
+              int16_t min = ASHA_WIN_RANGE_MIN;
               return tud_audio_buffer_and_schedule_control_xfer(rhport, p_request, &min, sizeof(min));
             }
 
           case AUDIO10_CS_REQ_GET_MAX:
             TU_LOG2("    Get Volume max of channel: %u\r\n", channelNum);
             {
-              int16_t max = usb_settings.max_vol;
+              int16_t max = ASHA_WIN_RANGE_MAX;
               return tud_audio_buffer_and_schedule_control_xfer(rhport, p_request, &max, sizeof(max));
   }
 
@@ -420,8 +420,8 @@ static bool audio20_feature_unit_get_request(uint8_t rhport, audio20_control_req
     if (request->bRequest == AUDIO20_CS_REQ_RANGE) {
       audio20_control_range_2_n_t(1) range_vol = {
           .wNumSubRanges = tu_htole16(1),
-          .subrange = {{.bMin = tu_htole16(usb_settings.min_vol),
-                          .bMax = tu_htole16(usb_settings.max_vol), 
+          .subrange = {{.bMin = tu_htole16(ASHA_WIN_RANGE_MIN),
+                          .bMax = tu_htole16(ASHA_WIN_RANGE_MAX), 
                           .bRes = tu_htole16(ASHA_USB_VOL_RES)}}};
       TU_LOG1("Get channel %u volume range (%d, %d, %u) \r\n", request->bChannelNumber,
               range_vol.subrange[0].bMin, range_vol.subrange[0].bMax, range_vol.subrange[0].bRes);

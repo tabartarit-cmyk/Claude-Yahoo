@@ -94,13 +94,14 @@ PicoAshaMainWindow::PicoAshaMainWindow(QWidget *parent)
     usbLayout->addWidget(m_USBUacVersCombo);
 
     auto usbVolMinLabel = new QLabel("Min Volume");
-    usbVolMinLabel->setToolTip("Volume at 0% on the Windows slider, in ASHA steps (0.375 dB).\nBelow -127 (-47.6 dB), the hearing aids' floor, the level is\nobtained by digitally attenuating the audio.");
+    usbVolMinLabel->setToolTip("Level at the bottom of the Windows slider (just above mute), in ASHA steps (0.375 dB).\nBelow -127 (-47.6 dB), the hearing aids' floor, the level is\nobtained by digitally attenuating the audio.");
     usbLayout->addWidget(usbVolMinLabel);
     m_USBVolMinSpin = new QSpinBox();
     m_USBVolMinSpin->setRange(-240, 0);
     usbLayout->addWidget(m_USBVolMinSpin);
 
     auto usbVolMaxLabel = new QLabel("Max Volume");
+    usbVolMaxLabel->setToolTip("Level at 100% on the Windows slider, in ASHA steps (0.375 dB).");
     usbLayout->addWidget(usbVolMaxLabel);
     m_USBVolMaxSpin = new QSpinBox();
     m_USBVolMaxSpin->setRange(-240, 0);
