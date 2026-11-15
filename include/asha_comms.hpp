@@ -167,6 +167,21 @@ namespace comm
         // 0 from older clients means "unchanged".
         uint16_t reserved;
 
+        // uac_vers carries more than the UAC version, so the packet keeps its size:
+        //   bits 0-1 : UAC version (1 or 2)
+        //   bits 2-8 : -(reference minimum sent by the OS, in 0.375dB steps), 0-127
+        //   bits 9-15: -(reference maximum sent by the OS, in 0.375dB steps), 0-127
+        // Both reference fields at 0 (older clients) mean the defaults (-123 .. 0).
+        static constexpr uint16_t pack_uac(uint16_t uac, int win_min_steps, int win_max_steps)
+        {
+            return (uint16_t)((uac & 3u)
+                | (((unsigned)(-win_min_steps) & 0x7Fu) << 2)
+                | (((unsigned)(-win_max_steps) & 0x7Fu) << 9));
+        }
+        uint16_t uac() const { return (uint16_t)(uac_vers & 3u); }
+        int win_min_steps() const { return ((uac_vers >> 2) == 0) ? -123 : -(int)((uac_vers >> 2) & 0x7Fu); }
+        int win_max_steps() const { return ((uac_vers >> 2) == 0) ? 0 : -(int)((uac_vers >> 9) & 0x7Fu); }
+
         bool operator==(const USBInfo&) const = default;
     };
 

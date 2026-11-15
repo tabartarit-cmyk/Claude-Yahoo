@@ -321,7 +321,9 @@ void HearingAid::on_serial_host_connected()
     }
     send_intro_packet((int8_t)num_connected(), intro_flags);
     USBInfo usb_info = {
-        .uac_vers = usb_settings.uac_version,
+        .uac_vers = USBInfo::pack_uac(usb_settings.uac_version,
+                                      usb_settings.win_min / ASHA_USB_VOL_RES,
+                                      usb_settings.win_max / ASHA_USB_VOL_RES),
         .min_vol = usb_settings.min_vol,
         .max_vol = usb_settings.max_vol,
         .reserved = usb_settings.curve
@@ -1247,9 +1249,11 @@ bool HearingAid::process_audio()
     //   exponent < 1.0 : louder at mid-slider, flatter near the top
     // Both ends of the range are preserved.
     auto shape = [min_vol, max_vol](int16_t usb_vol) -> int16_t {
-        // Slider position (0..1) seen through the fixed range announced to the OS
-        int16_t const v = std::clamp(usb_vol, (int16_t)ASHA_WIN_RANGE_MIN, (int16_t)ASHA_WIN_RANGE_MAX);
-        float const x = (float)(v - ASHA_WIN_RANGE_MIN) / (float)(ASHA_WIN_RANGE_MAX - ASHA_WIN_RANGE_MIN);
+        // Slider position (0..1) seen through the reference range of the OS levels
+        int16_t const w_min = usb_settings.win_min;
+        int16_t const w_max = usb_settings.win_max;
+        int16_t const v = std::clamp(usb_vol, w_min, w_max);
+        float const x = (float)(v - w_min) / (float)(w_max - w_min);
         uint16_t const curve = usb_settings.curve;
         bool const power_mode = (curve & ASHA_VOL_CURVE_POWER_FLAG) != 0;
         float const exponent = (float)(curve & ASHA_VOL_CURVE_VALUE_MASK) / 100.0f;
