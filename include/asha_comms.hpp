@@ -162,9 +162,7 @@ namespace comm
         int16_t  min_vol;
         // Maximum volume. Must be in range -23,040 - 0
         int16_t  max_vol;
-        // Volume curve exponent in hundredths (100 = 1.00 = unchanged,
-        // valid 20 - 500). Bit 15 set = interpolate linearly in power.
-        // 0 from older clients means "unchanged".
+        // Unused, always 0
         uint16_t reserved;
 
         // uac_vers carries more than the UAC version, so the packet keeps its size:

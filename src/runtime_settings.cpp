@@ -12,7 +12,6 @@ namespace asha
 // HCI dump:     scratch[1] bit 0 = enabled flag.
 // USB settings: scratch[1] bits  0-15 = (min_vol - ASHA_USB_VOL_MIN_EXT),
 //               scratch[1] bits 16-31 = (max_vol - ASHA_USB_VOL_MIN_EXT),
-//               scratch[2]            = curve exponent (hundredths),
 //               scratch[3] bits  0-1  = uac_version,
 //               scratch[3] bits  2-16 = (dig_thr - ASHA_USB_VOL_MIN_EXT).
 // Scratch registers survive a watchdog reset but clear on power-on reset.
@@ -128,7 +127,6 @@ void RuntimeSettings::defer_usb_settings(USBSettings const& s)
     watchdog_hw->scratch[1] =
           (uint32_t)(s.min_vol - ASHA_USB_VOL_MIN_EXT)          // bits 0-15
         | ((uint32_t)(s.max_vol - ASHA_USB_VOL_MIN_EXT) << 16); // bits 16-31
-    watchdog_hw->scratch[2] = s.curve;
     watchdog_hw->scratch[3] = (uint32_t)(s.uac_version & 3u)
         | ((uint32_t)(s.dig_thr - ASHA_USB_VOL_MIN_EXT) << 2); // bits 2-16
 }
@@ -151,7 +149,6 @@ void RuntimeSettings::apply_pending_scratch()
         uint32_t q = watchdog_hw->scratch[3];
         s.uac_version = (uint16_t)(q & 3u);
         s.dig_thr     = (int16_t)((q >> 2) & 0x7FFFu) + ASHA_USB_VOL_MIN_EXT;
-        s.curve       = (uint16_t)watchdog_hw->scratch[2];
         store_tlv_tag(Tag::USBSetting, s);
         break;
     }
@@ -160,7 +157,6 @@ void RuntimeSettings::apply_pending_scratch()
     }
     watchdog_hw->scratch[0] = 0u;
     watchdog_hw->scratch[1] = 0u;
-    watchdog_hw->scratch[2] = 0u;
     watchdog_hw->scratch[3] = 0u;
 }
 

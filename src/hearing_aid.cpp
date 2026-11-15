@@ -325,7 +325,7 @@ void HearingAid::on_serial_host_connected()
                                       usb_settings.dig_thr / ASHA_USB_VOL_RES),
         .min_vol = usb_settings.min_vol,
         .max_vol = usb_settings.max_vol,
-        .reserved = usb_settings.curve
+        .reserved = 0
     };
     send_usb_info_packet(usb_info);
     for (auto ha : hearing_aids) {
@@ -1241,43 +1241,22 @@ bool HearingAid::process_audio()
     auto min_vol = usb_settings.min_vol;
     auto max_vol = usb_settings.max_vol;
 
-    // Optional power-law volume curve. The position in the min..max dB range
-    // (what the OS slider produces) is raised to the configured exponent:
-    //   exponent = 1.0 : unchanged
-    //   exponent > 1.0 : quieter at mid-slider, steeper near the top
-    //   exponent < 1.0 : louder at mid-slider, flatter near the top
-    // Both ends of the range are preserved.
+    // Position of the OS volume slider (0..1), seen through the fixed range
+    // announced to the OS, mapped linearly (in dB) between Min and Max volume.
     auto shape = [min_vol, max_vol](int16_t usb_vol) -> int16_t {
-        // Slider position (0..1) seen through the fixed range announced to the OS
         int16_t const v = std::clamp(usb_vol, (int16_t)ASHA_WIN_RANGE_MIN, (int16_t)ASHA_WIN_RANGE_MAX);
         float const x = (float)(v - ASHA_WIN_RANGE_MIN) / (float)(ASHA_WIN_RANGE_MAX - ASHA_WIN_RANGE_MIN);
-        uint16_t const curve = usb_settings.curve;
-        bool const power_mode = (curve & ASHA_VOL_CURVE_POWER_FLAG) != 0;
-        float const exponent = (float)(curve & ASHA_VOL_CURVE_VALUE_MASK) / 100.0f;
-        if (max_vol <= min_vol) {
-            return min_vol;
-        }
-        float const span = (float)(max_vol - min_vol);
-        float const t = powf(x, exponent);
-        float level;
-        if (power_mode) {
-            // Linear in power between Min (0%) and Max (100%): the power
-            // relative to Max Volume goes from p_min to 1 in a straight line.
-            float const p_min = powf(10.0f, (float)(min_vol - max_vol) / (256.0f * 10.0f));
-            float const p = p_min + t * (1.0f - p_min);
-            level = (float)max_vol + 256.0f * 10.0f * log10f(p);
-        } else {
-            level = (float)min_vol + t * span;
-        }
+        float const level = (float)min_vol + x * (float)(max_vol - min_vol);
         return (int16_t)std::clamp((int)lroundf(level), (int)min_vol, (int)max_vol);
     };
     // The shaped level is split in two: down to the digital attenuation
     // threshold (default: the hearing aids' floor, -47.625dB) it is sent as
     // the ASHA volume; anything lower is produced by digitally attenuating
     // the PCM before encoding (like a software volume control).
-    auto split = [&shape](int16_t usb_vol, int8_t& asha_vol, uint32_t& gain_q15) {
+    auto split = [&shape, max_vol](int16_t usb_vol, int8_t& asha_vol, uint32_t& gain_q15) {
         int16_t const level = shape(usb_vol);
-        int16_t const thr = usb_settings.dig_thr;
+        // The hearing aids' volume never goes above Max Volume
+        int16_t const thr = std::min<int16_t>(usb_settings.dig_thr, max_vol);
         asha_vol = (int8_t)(std::max<int16_t>(level, thr) / ASHA_USB_VOL_RES);
         int const below = (int)level - thr; // negative under the threshold
         gain_q15 = (below >= 0)

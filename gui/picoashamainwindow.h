@@ -9,7 +9,6 @@
 #include <QList>
 #include <QComboBox>
 #include <QSpinBox>
-#include <QCheckBox>
 
 #include "remotedevice.h"
 #include "pairdialog.h"
@@ -83,8 +82,6 @@ private:
     QComboBox*   m_USBUacVersCombo;
     QSpinBox*    m_USBVolMinSpin;
     QSpinBox*    m_USBVolMaxSpin;
-    QDoubleSpinBox* m_USBVolCurveSpin;
-    QCheckBox*   m_USBVolPowerCheck;
     QSpinBox*    m_USBDigThrSpin;
     QPushButton* m_USBSettingsBtn;
 

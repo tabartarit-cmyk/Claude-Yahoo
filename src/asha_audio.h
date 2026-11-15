@@ -61,15 +61,6 @@ extern "C" {
 // Digital gain is Q15: 32768 = unity
 #define ASHA_DIGITAL_GAIN_UNITY 32768u
 
-// Volume curve exponent, in hundredths (100 = 1.00 = no change)
-#define ASHA_VOL_CURVE_DEFAULT 100u
-#define ASHA_VOL_CURVE_MIN      20u // 0.20
-#define ASHA_VOL_CURVE_MAX     500u // 5.00
-// Flag (bit 15) in the curve setting: interpolate linearly in POWER between
-// Min and Max volume (25% on the slider = 1/4 of the power at Max Volume)
-// instead of in dB. The exponent is still applied to the slider position.
-#define ASHA_VOL_CURVE_POWER_FLAG 0x8000u
-#define ASHA_VOL_CURVE_VALUE_MASK 0x7FFFu
 
 enum AshaAudioSide {
     AudioLeft,
