@@ -31,12 +31,23 @@
 extern "C" {
 #endif
 
+// Optional USB network interface (RNDIS + CDC-ECM), see usb_net.hpp
+#if defined(PICO_ASHA_USB_NET) && PICO_ASHA_USB_NET
+#define ASHA_USB_NET 1
+#else
+#define ASHA_USB_NET 0
+#endif
+
 enum
 {
   ITF_NUM_AUDIO_CONTROL = 0,
   ITF_NUM_AUDIO_STREAMING,
   ITF_NUM_CDC,
   ITF_NUM_CDC_DATA,
+#if ASHA_USB_NET
+  ITF_NUM_NET,
+  ITF_NUM_NET_DATA,
+#endif
   ITF_NUM_TOTAL
 };
 

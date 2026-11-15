@@ -29,6 +29,7 @@
 #include "usb_common.hpp"
 
 #include "asha_unique_id.hpp"
+#include "usb_net.hpp"
 
 namespace asha
 {
@@ -41,7 +42,7 @@ namespace asha
  */
 #define _PID_MAP(itf, n)  ( (CFG_TUD_##itf) << (n) )
 #define USB_PID           (0x4000 | _PID_MAP(CDC, 0) | _PID_MAP(MSC, 1) | _PID_MAP(HID, 2) | \
-    _PID_MAP(MIDI, 3) | _PID_MAP(AUDIO, 4) | _PID_MAP(VENDOR, 5) )
+    _PID_MAP(MIDI, 3) | _PID_MAP(AUDIO, 4) | _PID_MAP(VENDOR, 5) | (ASHA_USB_NET << 6) )
 
 //--------------------------------------------------------------------+
 // Device Descriptors
@@ -67,7 +68,9 @@ tusb_desc_device_t const desc_device =
     .iProduct           = 0x02,
     .iSerialNumber      = 0x03,
 
-    .bNumConfigurations = 0x01
+    // With the USB network option: config 1 = RNDIS (Windows), config 2 = CDC-ECM
+    // (Linux and Android prefer it over RNDIS when both are offered).
+    .bNumConfigurations = (ASHA_USB_NET ? 0x02 : 0x01)
 };
 
 // Invoked when received GET DEVICE DESCRIPTOR
@@ -117,6 +120,57 @@ extern "C" uint8_t const * tud_descriptor_device_cb(void)
 
 #define EPNUM_AUDIO_FB      (EPNUM_AUDIO | 0x80)
 
+#define EPNUM_NET_NOTIF     0x86
+#define EPNUM_NET_OUT       0x07
+#define EPNUM_NET_IN        0x87
+
+#define STRID_NET           6
+#define STRID_MAC           7
+
+#if ASHA_USB_NET
+
+// Audio + CDC bodies shared by the four configurations
+#define UAC1_BODY \
+    TUD_AUDIO10_SPEAKER_STEREO_FB_DESCRIPTOR(ITF_NUM_AUDIO_CONTROL, 4, CFG_TUD_AUDIO_FUNC_1_N_BYTES_PER_SAMPLE_RX, CFG_TUD_AUDIO_FUNC_1_RESOLUTION_RX, EPNUM_AUDIO, CFG_TUD_AUDIO_FUNC_1_EP_OUT_SZ_FS, EPNUM_AUDIO_FB, 16000, 48000), \
+    TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, 5, EPNUM_CDC_NOTIF, 8, EPNUM_CDC_OUT, EPNUM_CDC_IN, 64)
+
+#define UAC2_BODY \
+    TUD_AUDIO20_SPEAKER_STEREO_FB_DESCRIPTOR(ITF_NUM_AUDIO_CONTROL, 4, CFG_TUD_AUDIO_FUNC_1_N_BYTES_PER_SAMPLE_RX, CFG_TUD_AUDIO_FUNC_1_RESOLUTION_RX, EPNUM_AUDIO, CFG_TUD_AUDIO_FUNC_1_EP_OUT_SZ_HS, EPNUM_AUDIO_FB, 4), \
+    TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, 5, EPNUM_CDC_NOTIF, 8, EPNUM_CDC_OUT, EPNUM_CDC_IN, 64)
+
+#define NET_RNDIS \
+    TUD_RNDIS_DESCRIPTOR(ITF_NUM_NET, STRID_NET, EPNUM_NET_NOTIF, 8, EPNUM_NET_OUT, EPNUM_NET_IN, CFG_TUD_NET_ENDPOINT_SIZE)
+
+#define NET_ECM \
+    TUD_CDC_ECM_DESCRIPTOR(ITF_NUM_NET, STRID_NET, STRID_MAC, EPNUM_NET_NOTIF, 64, EPNUM_NET_OUT, EPNUM_NET_IN, CFG_TUD_NET_ENDPOINT_SIZE, CFG_TUD_NET_MTU)
+
+#define UAC1_BASE_LEN (TUD_CONFIG_DESC_LEN + TUD_AUDIO10_SPEAKER_STEREO_FB_DESC_LEN(2) + TUD_CDC_DESC_LEN)
+#define UAC2_BASE_LEN (TUD_CONFIG_DESC_LEN + TUD_AUDIO20_SPEAKER_STEREO_FB_DESC_LEN + TUD_CDC_DESC_LEN)
+
+uint8_t const desc_uac1_rndis[] = {
+    TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, UAC1_BASE_LEN + TUD_RNDIS_DESC_LEN, 0x00, 100),
+    UAC1_BODY, NET_RNDIS
+};
+uint8_t const desc_uac1_ecm[] = {
+    TUD_CONFIG_DESCRIPTOR(2, ITF_NUM_TOTAL, 0, UAC1_BASE_LEN + TUD_CDC_ECM_DESC_LEN, 0x00, 100),
+    UAC1_BODY, NET_ECM
+};
+uint8_t const desc_uac2_rndis[] = {
+    TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, UAC2_BASE_LEN + TUD_RNDIS_DESC_LEN, 0x00, 100),
+    UAC2_BODY, NET_RNDIS
+};
+uint8_t const desc_uac2_ecm[] = {
+    TUD_CONFIG_DESCRIPTOR(2, ITF_NUM_TOTAL, 0, UAC2_BASE_LEN + TUD_CDC_ECM_DESC_LEN, 0x00, 100),
+    UAC2_BODY, NET_ECM
+};
+
+TU_VERIFY_STATIC(sizeof(desc_uac1_rndis) == UAC1_BASE_LEN + TUD_RNDIS_DESC_LEN, "Incorrect size");
+TU_VERIFY_STATIC(sizeof(desc_uac1_ecm) == UAC1_BASE_LEN + TUD_CDC_ECM_DESC_LEN, "Incorrect size");
+TU_VERIFY_STATIC(sizeof(desc_uac2_rndis) == UAC2_BASE_LEN + TUD_RNDIS_DESC_LEN, "Incorrect size");
+TU_VERIFY_STATIC(sizeof(desc_uac2_ecm) == UAC2_BASE_LEN + TUD_CDC_ECM_DESC_LEN, "Incorrect size");
+
+#else // !ASHA_USB_NET
+
 #define CONFIG_UAC1_TOTAL_LEN (TUD_CONFIG_DESC_LEN + TUD_AUDIO10_SPEAKER_STEREO_FB_DESC_LEN(2) + CFG_TUD_CDC * TUD_CDC_DESC_LEN)
 //#define CONFIG_UAC1_TOTAL_LEN (TUD_CONFIG_DESC_LEN + TUD_AUDIO10_SPEAKER_STEREO_FB_DESC_LEN(1))
 
@@ -151,13 +205,24 @@ uint8_t const desc_uac2_configuration[] = {
 TU_VERIFY_STATIC(sizeof(desc_uac2_configuration) == CONFIG_UAC2_TOTAL_LEN, "Incorrect size");
 
 
+#endif // ASHA_USB_NET
+
 // Invoked when received GET CONFIGURATION DESCRIPTOR
 // Application return pointer to descriptor
 // Descriptor contents must exist long enough for transfer to complete
 extern "C" uint8_t const * tud_descriptor_configuration_cb(uint8_t index)
 {
+#if ASHA_USB_NET
+  // index 0 = configuration 1 (RNDIS), index 1 = configuration 2 (CDC-ECM)
+  bool const uac2 = usb_settings.uac_version == 2;
+  if (index == 0) {
+    return uac2 ? desc_uac2_rndis : desc_uac1_rndis;
+  }
+  return uac2 ? desc_uac2_ecm : desc_uac1_ecm;
+#else
   (void)index; // for multiple configurations
   return usb_settings.uac_version == 2 ? desc_uac2_configuration : desc_uac1_configuration;
+#endif
 }
 
 //--------------------------------------------------------------------+
@@ -173,6 +238,8 @@ char const* string_desc_arr [] =
   pico_uid,                         // 3: Unique serial
   "Pico-ASHA Speakers",             // 4: Audio Interface
   "Pico-ASHA CDC",                  // 5: CDC Interface
+  "Pico-ASHA Network",              // 6: Network interface
+  "",                               // 7: MAC address (generated below)
 };
 
 static uint16_t _desc_str[32];
@@ -190,6 +257,20 @@ extern "C" uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t lang
     memcpy(&_desc_str[1], string_desc_arr[0], 2);
     chr_count = 1;
   }
+#if ASHA_USB_NET
+  else if (index == STRID_MAC)
+  {
+    // The MAC address of the network interface, as 12 hexadecimal characters
+    static const uint8_t mac[6] = ASHA_NET_MAC_INIT;
+    static const char hex[] = "0123456789ABCDEF";
+    for (uint8_t i = 0; i < 6; i++)
+    {
+      _desc_str[1 + 2 * i] = hex[mac[i] >> 4];
+      _desc_str[2 + 2 * i] = hex[mac[i] & 0x0F];
+    }
+    chr_count = 12;
+  }
+#endif
   else
   {
     // Convert ASCII string into UTF-16

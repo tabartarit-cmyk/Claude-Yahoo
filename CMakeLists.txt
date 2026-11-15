@@ -44,6 +44,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(ENABLE_AUDIO_ENC_STATS "Enable audio downsampling and encoding statistics" OFF)
 option(ENABLE_L2CAP_TX_TRACE "Emit per-SDU L2CAP transmit handshake diagnostics" OFF)
+option(PICO_ASHA_USB_NET "Add a USB network interface (RNDIS/ECM) serving a settings web page at http://192.168.7.1" OFF)
 
 # Firmware variants for the Raspberry Pi Pico 2 W. Each one is its own executable:
 #   pico_asha          ASHA only. The only variant which streams audio.
@@ -102,6 +103,11 @@ endif()
 # -Wall only: -Werror is not used so that a new compiler warning does not stop the build
 set_source_files_properties(${ASHA_SRC} src/classic_bt.cpp PROPERTIES COMPILE_OPTIONS "-Wall")
 
+if (PICO_ASHA_USB_NET)
+  list(APPEND pico_asha_defines "PICO_ASHA_USB_NET=1")
+  list(APPEND ASHA_SRC src/usb_net.cpp)
+endif()
+
 if (ENABLE_AUDIO_ENC_STATS)
   list(APPEND pico_asha_defines "PICO_ASHA_ENC_STATS=1")
 endif(ENABLE_AUDIO_ENC_STATS)
@@ -153,6 +159,11 @@ function(add_pico_asha_variant target variant_define)
     tinyusb_board
     etl::etl
   )
+
+  if (PICO_ASHA_USB_NET)
+    # lwIP without an OS and without Wi-Fi: the network is the USB interface
+    target_link_libraries(${target} pico_lwip pico_lwip_nosys)
+  endif()
 
   target_link_options(${target} PUBLIC -Wl,--print-memory-usage)
 endfunction()

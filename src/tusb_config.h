@@ -103,6 +103,18 @@ extern "C" {
 #define CFG_TUD_AUDIO             1
 #define CFG_TUD_VENDOR            0
 
+#if ASHA_USB_NET
+// RNDIS (Windows) and CDC-ECM (Linux, Android) network interface
+#define CFG_TUD_ECM_RNDIS         1
+#define CFG_TUD_NCM               0
+#ifndef CFG_TUD_NET_MTU
+#define CFG_TUD_NET_MTU           1514
+#endif
+#ifndef CFG_TUD_NET_ENDPOINT_SIZE
+#define CFG_TUD_NET_ENDPOINT_SIZE 64
+#endif
+#endif
+
 ///--------------------------------------------------------------------
 // AUDIO CLASS DRIVER CONFIGURATION
 //--------------------------------------------------------------------

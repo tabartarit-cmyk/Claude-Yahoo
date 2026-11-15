@@ -36,6 +36,7 @@
 
 #include "usb_descriptors.h"
 #include "usb_common.hpp"
+#include "usb_net.hpp"
 
 #include "asha_audio.h"
 #include "asha_comms.hpp"
@@ -130,6 +131,7 @@ void usb_main(void)
 {
   TU_LOG1("Headset running\n");
   next_audio_task_time = make_timeout_time_us(audio_start_delay_us);
+  usbnet::init();
 
   while (1)
   {
@@ -140,6 +142,7 @@ void usb_main(void)
     // from clearing the FIFO while a timer interrupt is reading it.
     audio_task();
     comm::usb_task();
+    usbnet::task();
   }
 }
 
