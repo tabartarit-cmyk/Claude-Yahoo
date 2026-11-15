@@ -110,7 +110,7 @@ USBSettings::operator bool() const
           && (min_vol <= ASHA_USB_VOL_MAX && min_vol >= ASHA_USB_VOL_MIN_EXT)
           && (max_vol <= ASHA_USB_VOL_MAX && max_vol >= ASHA_USB_VOL_MIN_EXT)
           && (max_vol >= min_vol)
-          && (win_min >= ASHA_USB_VOL_MIN && win_max <= ASHA_USB_VOL_MAX && win_min < win_max)
+          && (dig_thr >= ASHA_USB_VOL_MIN_EXT && dig_thr < 0)
           && ((curve & ASHA_VOL_CURVE_VALUE_MASK) >= ASHA_VOL_CURVE_MIN
               && (curve & ASHA_VOL_CURVE_VALUE_MASK) <= ASHA_VOL_CURVE_MAX);
 }

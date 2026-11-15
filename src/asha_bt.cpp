@@ -204,7 +204,7 @@ static void process_serial_cmds()
                 {
                     USBInfo& info = cmd_pkt.data.usb_settings;
                     USBSettings settings = {.uac_version = info.uac(), .min_vol = info.min_vol, .max_vol = info.max_vol, .curve = info.reserved ? info.reserved : (uint16_t)ASHA_VOL_CURVE_DEFAULT,
-        .win_min = (int16_t)(info.win_min_steps() * ASHA_USB_VOL_RES), .win_max = (int16_t)(info.win_max_steps() * ASHA_USB_VOL_RES)};
+        .dig_thr = (int16_t)(info.dig_thr_steps() * ASHA_USB_VOL_RES)};
                     if (settings && settings != runtime_settings.get_usb_settings()) {
                         RuntimeSettings::defer_usb_settings(settings);
                         watchdog_enable(10, true);

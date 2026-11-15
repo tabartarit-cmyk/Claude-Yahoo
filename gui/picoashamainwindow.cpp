@@ -130,24 +130,17 @@ PicoAshaMainWindow::PicoAshaMainWindow(QWidget *parent)
                                    "The Volume Curve exponent is still applied to the slider position.");
     usbLayout->addWidget(m_USBVolPowerCheck);
 
-    auto usbWinMinLabel = new QLabel("Windows Reference Min");
-    usbWinMinLabel->setToolTip("Calibration. Level (ASHA steps, 0.375 dB) that Windows sends at the bottom\n"
-                               "of its slider. Read it in 'Current Volume' with Min=-127, Max=0, Curve=1.00\n"
-                               "and Linear power off, at slider position 1.");
-    usbLayout->addWidget(usbWinMinLabel);
-    m_USBWinMinSpin = new QSpinBox();
-    m_USBWinMinSpin->setRange(-127, 0);
-    m_USBWinMinSpin->setValue(-123);
-    usbLayout->addWidget(m_USBWinMinSpin);
-
-    auto usbWinMaxLabel = new QLabel("Windows Reference Max");
-    usbWinMaxLabel->setToolTip("Calibration. Level (ASHA steps, 0.375 dB) that Windows sends at 100%.\n"
-                               "Read it in 'Current Volume' at slider position 100 with the same settings.");
-    usbLayout->addWidget(usbWinMaxLabel);
-    m_USBWinMaxSpin = new QSpinBox();
-    m_USBWinMaxSpin->setRange(-127, 0);
-    m_USBWinMaxSpin->setValue(0);
-    usbLayout->addWidget(m_USBWinMaxSpin);
+    auto usbDigThrLabel = new QLabel("Digital Attenuation Below");
+    usbDigThrLabel->setToolTip("Level (ASHA steps, 0.375 dB) under which the hearing aids' volume stays fixed\n"
+                               "and the audio signal is attenuated digitally instead, like the volume\n"
+                               "slider of a web browser (gives very quiet levels).\n"
+                               "-127 = only below the hearing aids' own floor.\n"
+                               "Equal to Max Volume = fully digital volume (hearing aids' volume never moves).");
+    usbLayout->addWidget(usbDigThrLabel);
+    m_USBDigThrSpin = new QSpinBox();
+    m_USBDigThrSpin->setRange(-240, -1);
+    m_USBDigThrSpin->setValue(-127);
+    usbLayout->addWidget(m_USBDigThrSpin);
 
     m_USBSettingsBtn = new QPushButton("Update");
     usbLayout->addWidget(m_USBSettingsBtn);
@@ -179,10 +172,7 @@ PicoAshaMainWindow::PicoAshaMainWindow(QWidget *parent)
     QObject::connect(m_USBVolMaxSpin, &QSpinBox::valueChanged, this, [=, this](int value) {
         setUSBSettingsBtnState();
     });
-    QObject::connect(m_USBWinMinSpin, &QSpinBox::valueChanged, this, [=, this](int value) {
-        setUSBSettingsBtnState();
-    });
-    QObject::connect(m_USBWinMaxSpin, &QSpinBox::valueChanged, this, [=, this](int value) {
+    QObject::connect(m_USBDigThrSpin, &QSpinBox::valueChanged, this, [=, this](int value) {
         setUSBSettingsBtnState();
     });
     QObject::connect(m_USBVolPowerCheck, &QCheckBox::toggled, this, [=, this](bool checked) {
@@ -376,7 +366,7 @@ void PicoAshaMainWindow::setUSBInfo(const asha::comm::USBInfo &usb_info)
         m_usbInfo.reserved = 100U; // firmware without curve support
     }
     // Normalise (older firmware sends the plain UAC version)
-    m_usbInfo.uac_vers = asha::comm::USBInfo::pack_uac(m_usbInfo.uac(), m_usbInfo.win_min_steps(), m_usbInfo.win_max_steps());
+    m_usbInfo.uac_vers = asha::comm::USBInfo::pack_uac(m_usbInfo.uac(), m_usbInfo.dig_thr_steps());
     int uac_ver = static_cast<int>(m_usbInfo.uac());
     int vol_min = static_cast<int>(m_usbInfo.min_vol) / 96;
     int vol_max = static_cast<int>(m_usbInfo.max_vol) / 96;
@@ -386,16 +376,14 @@ void PicoAshaMainWindow::setUSBInfo(const asha::comm::USBInfo &usb_info)
     // A value of 0 comes from firmware without curve support: treat as unchanged
     m_USBVolCurveSpin->setValue((m_usbInfo.reserved & 0x7FFFU) / 100.0);
     m_USBVolPowerCheck->setChecked((m_usbInfo.reserved & 0x8000U) != 0U);
-    m_USBWinMinSpin->setValue(m_usbInfo.win_min_steps());
-    m_USBWinMaxSpin->setValue(m_usbInfo.win_max_steps());
+    m_USBDigThrSpin->setValue(m_usbInfo.dig_thr_steps());
     setUSBSettingsBtnState();
 }
 
 void PicoAshaMainWindow::setUSBSettingsBtnState()
 {
     auto info = fromUsbWidgets();
-    if (m_usbInfo != info && info.min_vol < info.max_vol
-        && m_USBWinMinSpin->value() < m_USBWinMaxSpin->value()) {
+    if (m_usbInfo != info && info.min_vol < info.max_vol) {
         m_USBSettingsBtn->setEnabled(true);
     } else {
         m_USBSettingsBtn->setEnabled(false);
@@ -462,7 +450,7 @@ asha::comm::USBInfo PicoAshaMainWindow::fromUsbWidgets()
     if (m_USBVolPowerCheck->isChecked()) {
         curve |= 0x8000U;
     }
-    auto packed = asha::comm::USBInfo::pack_uac(uac_ver, m_USBWinMinSpin->value(), m_USBWinMaxSpin->value());
+    auto packed = asha::comm::USBInfo::pack_uac(uac_ver, m_USBDigThrSpin->value());
     return {.uac_vers = packed, .min_vol = min_vol, .max_vol = max_vol, .reserved = curve};
 }
 
@@ -493,8 +481,7 @@ void PicoAshaMainWindow::setUSBWidgetsEnabled(bool enabled)
     m_USBVolMaxSpin->setEnabled(enabled);
     m_USBVolCurveSpin->setEnabled(enabled);
     m_USBVolPowerCheck->setEnabled(enabled);
-    m_USBWinMinSpin->setEnabled(enabled);
-    m_USBWinMaxSpin->setEnabled(enabled);
+    m_USBDigThrSpin->setEnabled(enabled);
     if (!enabled) {
         m_USBSettingsBtn->setEnabled(enabled);
     }

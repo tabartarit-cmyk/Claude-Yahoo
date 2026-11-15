@@ -13,12 +13,11 @@ namespace asha
         // Volume curve exponent in hundredths (100 = 1.00 = unchanged).
         // Applied to the normalised position in the min..max range.
         uint16_t curve = ASHA_VOL_CURVE_DEFAULT;
-        // Range of levels the OS actually sends for its volume slider (what
-        // it gives at the bottom and at 100%). Calibrated by the user from the
-        // "Current Volume" readings, because the OS may not follow the range
-        // announced by the device.
-        int16_t win_min = ASHA_WIN_RANGE_MIN;
-        int16_t win_max = ASHA_WIN_RANGE_MAX;
+        // Digital attenuation threshold: levels below it are not sent to the
+        // hearing aids as a volume command (their volume stays at this value);
+        // the PCM signal is attenuated digitally instead, like a software
+        // volume control. The default is the hearing aids' own floor.
+        int16_t dig_thr = ASHA_USB_VOL_MIN;
 
         explicit operator bool() const;
         bool operator==(const USBSettings&) const = default;
