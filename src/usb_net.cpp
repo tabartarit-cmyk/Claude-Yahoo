@@ -42,7 +42,7 @@
 // TinyUSB network driver glue
 // ---------------------------------------------------------------------------
 
-extern "C" const uint8_t tud_network_mac_address[6] = ASHA_NET_MAC_INIT;
+extern "C" uint8_t tud_network_mac_address[6] = ASHA_NET_MAC_INIT;
 
 namespace asha::usbnet
 {

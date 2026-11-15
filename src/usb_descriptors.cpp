@@ -120,6 +120,15 @@ extern "C" uint8_t const * tud_descriptor_device_cb(void)
 
 #define EPNUM_AUDIO_FB      (EPNUM_AUDIO | 0x80)
 
+#if ASHA_USB_NET
+#ifndef CFG_TUD_NET_MTU
+#define CFG_TUD_NET_MTU           1514
+#endif
+#ifndef CFG_TUD_NET_ENDPOINT_SIZE
+#define CFG_TUD_NET_ENDPOINT_SIZE 64
+#endif
+#endif
+
 #define EPNUM_NET_NOTIF     0x86
 #define EPNUM_NET_OUT       0x07
 #define EPNUM_NET_IN        0x87
