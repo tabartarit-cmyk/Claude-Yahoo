@@ -38,6 +38,13 @@ extern "C" {
 #define ASHA_USB_NET 0
 #endif
 
+// Network protocol: CDC-NCM (Windows 11, Linux, Android) or RNDIS + CDC-ECM
+#if ASHA_USB_NET && defined(PICO_ASHA_USB_NET_NCM) && PICO_ASHA_USB_NET_NCM
+#define ASHA_USB_NET_NCM 1
+#else
+#define ASHA_USB_NET_NCM 0
+#endif
+
 enum
 {
   ITF_NUM_AUDIO_CONTROL = 0,

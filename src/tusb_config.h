@@ -104,9 +104,27 @@ extern "C" {
 #define CFG_TUD_VENDOR            0
 
 #if ASHA_USB_NET
+#if ASHA_USB_NET_NCM
+// CDC-NCM network interface (Windows 11, Linux, Android)
+#define CFG_TUD_ECM_RNDIS         0
+#define CFG_TUD_NCM               1
+#ifndef CFG_TUD_NCM_IN_NTB_MAX_SIZE
+#define CFG_TUD_NCM_IN_NTB_MAX_SIZE   (2 * 1514 + 100)
+#endif
+#ifndef CFG_TUD_NCM_OUT_NTB_MAX_SIZE
+#define CFG_TUD_NCM_OUT_NTB_MAX_SIZE  (2 * 1514 + 100)
+#endif
+#ifndef CFG_TUD_NCM_IN_NTB_N
+#define CFG_TUD_NCM_IN_NTB_N      1
+#endif
+#ifndef CFG_TUD_NCM_OUT_NTB_N
+#define CFG_TUD_NCM_OUT_NTB_N     1
+#endif
+#else
 // RNDIS (Windows) and CDC-ECM (Linux, Android) network interface
 #define CFG_TUD_ECM_RNDIS         1
 #define CFG_TUD_NCM               0
+#endif
 #endif
 
 ///--------------------------------------------------------------------

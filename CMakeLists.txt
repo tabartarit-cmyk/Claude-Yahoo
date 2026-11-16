@@ -44,7 +44,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(ENABLE_AUDIO_ENC_STATS "Enable audio downsampling and encoding statistics" OFF)
 option(ENABLE_L2CAP_TX_TRACE "Emit per-SDU L2CAP transmit handshake diagnostics" OFF)
-option(PICO_ASHA_USB_NET "Add a USB network interface (RNDIS/ECM) serving a settings web page at http://192.168.7.1" ON)
+option(PICO_ASHA_USB_NET "Add a USB network interface serving a settings web page at http://192.168.7.1" ON)
+# NCM: Windows 11, Linux, Android. RNDIS_ECM: RNDIS for Windows, ECM for Linux and Android.
+set(PICO_ASHA_USB_NET_MODE "NCM" CACHE STRING "USB network protocol (NCM or RNDIS_ECM)")
 
 # Firmware variants for the Raspberry Pi Pico 2 W. Each one is its own executable:
 #   pico_asha          ASHA only. The only variant which streams audio.
@@ -105,6 +107,9 @@ set_source_files_properties(${ASHA_SRC} src/classic_bt.cpp PROPERTIES COMPILE_OP
 
 if (PICO_ASHA_USB_NET)
   list(APPEND pico_asha_defines "PICO_ASHA_USB_NET=1")
+  if (PICO_ASHA_USB_NET_MODE STREQUAL "NCM")
+    list(APPEND pico_asha_defines "PICO_ASHA_USB_NET_NCM=1")
+  endif()
   list(APPEND ASHA_SRC src/usb_net.cpp)
 
   # The TinyUSB network class must be compiled. Some Pico SDK versions already
@@ -118,8 +123,11 @@ if (PICO_ASHA_USB_NET)
       endif()
     endif()
   endforeach()
-  foreach(_f src/class/net/ecm_rndis_device.c src/class/net/ncm_device.c
-             src/class/net/net_device.c lib/networking/rndis_reports.c)
+  set(ASHA_NET_FILES src/class/net/ecm_rndis_device.c src/class/net/ncm_device.c src/class/net/net_device.c)
+  if (NOT PICO_ASHA_USB_NET_MODE STREQUAL "NCM")
+    list(APPEND ASHA_NET_FILES lib/networking/rndis_reports.c)
+  endif()
+  foreach(_f ${ASHA_NET_FILES})
     get_filename_component(_name ${_f} NAME)
     if (EXISTS "${PICO_TINYUSB_PATH}/${_f}" AND NOT "${ASHA_TUSB_SRCS}" MATCHES "${_name}")
       message(STATUS "Adding TinyUSB ${_f}")

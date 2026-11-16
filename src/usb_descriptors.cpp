@@ -42,7 +42,7 @@ namespace asha
  */
 #define _PID_MAP(itf, n)  ( (CFG_TUD_##itf) << (n) )
 #define USB_PID           (0x4000 | _PID_MAP(CDC, 0) | _PID_MAP(MSC, 1) | _PID_MAP(HID, 2) | \
-    _PID_MAP(MIDI, 3) | _PID_MAP(AUDIO, 4) | _PID_MAP(VENDOR, 5) | (ASHA_USB_NET << 6) )
+    _PID_MAP(MIDI, 3) | _PID_MAP(AUDIO, 4) | _PID_MAP(VENDOR, 5) | (ASHA_USB_NET << 6) | (ASHA_USB_NET_NCM << 7) )
 
 //--------------------------------------------------------------------+
 // Device Descriptors
@@ -70,7 +70,7 @@ tusb_desc_device_t const desc_device =
 
     // With the USB network option: config 1 = RNDIS (Windows), config 2 = CDC-ECM
     // (Linux and Android prefer it over RNDIS when both are offered).
-    .bNumConfigurations = (ASHA_USB_NET ? 0x02 : 0x01)
+    .bNumConfigurations = ((ASHA_USB_NET && !ASHA_USB_NET_NCM) ? 0x02 : 0x01)
 };
 
 // Invoked when received GET DEVICE DESCRIPTOR
@@ -156,6 +156,25 @@ extern "C" uint8_t const * tud_descriptor_device_cb(void)
 #define UAC1_BASE_LEN (TUD_CONFIG_DESC_LEN + TUD_AUDIO10_SPEAKER_STEREO_FB_DESC_LEN(2) + TUD_CDC_DESC_LEN)
 #define UAC2_BASE_LEN (TUD_CONFIG_DESC_LEN + TUD_AUDIO20_SPEAKER_STEREO_FB_DESC_LEN + TUD_CDC_DESC_LEN)
 
+#if ASHA_USB_NET_NCM
+
+#define NET_NCM \
+    TUD_CDC_NCM_DESCRIPTOR(ITF_NUM_NET, STRID_NET, STRID_MAC, EPNUM_NET_NOTIF, 64, EPNUM_NET_OUT, EPNUM_NET_IN, CFG_TUD_NET_ENDPOINT_SIZE, CFG_TUD_NET_MTU)
+
+uint8_t const desc_uac1_ncm[] = {
+    TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, UAC1_BASE_LEN + TUD_CDC_NCM_DESC_LEN, 0x00, 100),
+    UAC1_BODY, NET_NCM
+};
+uint8_t const desc_uac2_ncm[] = {
+    TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, UAC2_BASE_LEN + TUD_CDC_NCM_DESC_LEN, 0x00, 100),
+    UAC2_BODY, NET_NCM
+};
+
+TU_VERIFY_STATIC(sizeof(desc_uac1_ncm) == UAC1_BASE_LEN + TUD_CDC_NCM_DESC_LEN, "Incorrect size");
+TU_VERIFY_STATIC(sizeof(desc_uac2_ncm) == UAC2_BASE_LEN + TUD_CDC_NCM_DESC_LEN, "Incorrect size");
+
+#else // RNDIS + ECM
+
 uint8_t const desc_uac1_rndis[] = {
     TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, UAC1_BASE_LEN + TUD_RNDIS_DESC_LEN, 0x00, 100),
     UAC1_BODY, NET_RNDIS
@@ -177,6 +196,8 @@ TU_VERIFY_STATIC(sizeof(desc_uac1_rndis) == UAC1_BASE_LEN + TUD_RNDIS_DESC_LEN, 
 TU_VERIFY_STATIC(sizeof(desc_uac1_ecm) == UAC1_BASE_LEN + TUD_CDC_ECM_DESC_LEN, "Incorrect size");
 TU_VERIFY_STATIC(sizeof(desc_uac2_rndis) == UAC2_BASE_LEN + TUD_RNDIS_DESC_LEN, "Incorrect size");
 TU_VERIFY_STATIC(sizeof(desc_uac2_ecm) == UAC2_BASE_LEN + TUD_CDC_ECM_DESC_LEN, "Incorrect size");
+
+#endif // ASHA_USB_NET_NCM
 
 #else // !ASHA_USB_NET
 
@@ -222,12 +243,17 @@ TU_VERIFY_STATIC(sizeof(desc_uac2_configuration) == CONFIG_UAC2_TOTAL_LEN, "Inco
 extern "C" uint8_t const * tud_descriptor_configuration_cb(uint8_t index)
 {
 #if ASHA_USB_NET
-  // index 0 = configuration 1 (RNDIS), index 1 = configuration 2 (CDC-ECM)
   bool const uac2 = usb_settings.uac_version == 2;
+#if ASHA_USB_NET_NCM
+  (void)index; // a single configuration with a CDC-NCM network interface
+  return uac2 ? desc_uac2_ncm : desc_uac1_ncm;
+#else
+  // index 0 = configuration 1 (RNDIS), index 1 = configuration 2 (CDC-ECM)
   if (index == 0) {
     return uac2 ? desc_uac2_rndis : desc_uac1_rndis;
   }
   return uac2 ? desc_uac2_ecm : desc_uac1_ecm;
+#endif
 #else
   (void)index; // for multiple configurations
   return usb_settings.uac_version == 2 ? desc_uac2_configuration : desc_uac1_configuration;
