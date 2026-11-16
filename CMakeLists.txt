@@ -44,7 +44,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(ENABLE_AUDIO_ENC_STATS "Enable audio downsampling and encoding statistics" OFF)
 option(ENABLE_L2CAP_TX_TRACE "Emit per-SDU L2CAP transmit handshake diagnostics" OFF)
-option(PICO_ASHA_USB_NET "Add a USB network interface serving a settings web page at http://192.168.7.1" ON)
+# Experimental: Windows could not start the network interface (RNDIS and NCM both failed), so it is off by default.
+option(PICO_ASHA_USB_NET "Add a USB network interface serving a settings web page at http://192.168.7.1" OFF)
 # NCM: Windows 11, Linux, Android. RNDIS_ECM: RNDIS for Windows, ECM for Linux and Android.
 set(PICO_ASHA_USB_NET_MODE "NCM" CACHE STRING "USB network protocol (NCM or RNDIS_ECM)")
 
