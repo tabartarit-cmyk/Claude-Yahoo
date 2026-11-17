@@ -45,6 +45,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(ENABLE_AUDIO_ENC_STATS "Enable audio downsampling and encoding statistics" OFF)
 option(ENABLE_L2CAP_TX_TRACE "Emit per-SDU L2CAP transmit handshake diagnostics" OFF)
 # Experimental: Windows could not start the network interface (RNDIS and NCM both failed), so it is off by default.
+# Smartphone audio input over Bluetooth Classic (A2DP sink), ASHA variant only.
+# Experimental, see src/phone_audio.hpp.
+option(PICO_ASHA_A2DP "Receive audio from a smartphone over Bluetooth (A2DP sink)" OFF)
 option(PICO_ASHA_USB_NET "Add a USB network interface serving a settings web page at http://192.168.7.1" OFF)
 # NCM: Windows 11, Linux, Android. RNDIS_ECM: RNDIS for Windows, ECM for Linux and Android.
 set(PICO_ASHA_USB_NET_MODE "NCM" CACHE STRING "USB network protocol (NCM or RNDIS_ECM)")
@@ -75,6 +78,7 @@ set(ASHA_SRC
   src/runtime_settings.cpp
   src/asha_audio.c
   src/asha_fir.c
+  src/phone_audio.cpp
   src/asha_bt.cpp
   src/asha_comms.cpp
   src/asha_led.cpp
@@ -200,6 +204,14 @@ endfunction()
 
 if ("asha" IN_LIST PICO_ASHA_VARIANTS)
   add_pico_asha_variant(pico_asha PICO_ASHA_VARIANT_ASHA=1)
+  if (PICO_ASHA_A2DP)
+    if (TARGET pico_btstack_classic AND TARGET pico_btstack_sbc_decoder)
+      target_compile_definitions(pico_asha PRIVATE PICO_ASHA_A2DP=1)
+      target_link_libraries(pico_asha pico_btstack_classic pico_btstack_sbc_decoder)
+    else()
+      message(FATAL_ERROR "PICO_ASHA_A2DP needs pico_btstack_classic and pico_btstack_sbc_decoder from the Pico SDK")
+    endif()
+  endif()
 endif()
 
 if ("mfi" IN_LIST PICO_ASHA_VARIANTS)

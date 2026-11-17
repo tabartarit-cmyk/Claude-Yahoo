@@ -604,6 +604,22 @@ extern "C" bool tud_audio_rx_done_isr(uint8_t rhport, uint16_t n_bytes_received,
 // AUDIO Task
 //--------------------------------------------------------------------+
 
+// Encode one millisecond of USB audio, mixed with the smartphone audio when
+// the phone is playing (firmware built with PICO_ASHA_A2DP).
+static void encode_with_phone(PCMStereoSample* usb, uint16_t count)
+{
+#if ASHA_A2DP
+  static PCMStereoSample mixed[ASHA_PCM_MAX_SAMPLES];
+  if (asha_audio_mix_phone(usb, count, mixed)) {
+    // The hearing aids must keep streaming even when the USB audio is silent
+    asha_audio_set_pcm_streaming_enabled(true);
+    asha_audio_encode_1ms_pcm_scaled(mixed, ASHA_PCM_MAX_SAMPLES);
+    return;
+  }
+#endif
+  asha_audio_encode_1ms_pcm(usb, count);
+}
+
 static void audio_task()
 {
   if (!time_reached(next_audio_task_time)) {
@@ -634,7 +650,7 @@ static void audio_task()
         silence_counter = 0;
       }
       asha_audio_set_pcm_streaming_enabled((silence_counter >= silence_timeout) ? false : true);
-      asha_audio_encode_1ms_pcm(spk_buf, samples);
+      encode_with_phone(spk_buf, samples);
       return;
     }
   }
@@ -646,7 +662,7 @@ static void audio_task()
     asha_audio_set_pcm_streaming_enabled(false);
   }
   // Continue encoding silence while the USB FIFO catches up or the host stops.
-  asha_audio_encode_1ms_pcm(silence_buff, ASHA_PCM_PACKET_SIZE);
+  encode_with_phone(silence_buff, ASHA_PCM_PACKET_SIZE);
 }
 
 } // namespace asha

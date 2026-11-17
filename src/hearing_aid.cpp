@@ -8,6 +8,7 @@
 #include "asha_variant.hpp"
 #include "bt_status_err.hpp"
 #include "usb_common.hpp"
+#include "phone_audio.hpp"
 
 namespace asha
 {
@@ -1256,20 +1257,109 @@ bool HearingAid::process_audio()
     auto split = [&shape, max_vol](int16_t usb_vol, int8_t& asha_vol, uint32_t& gain_q15) {
         int16_t const level = shape(usb_vol);
         // The hearing aids' volume never goes above Max Volume
-        int16_t const thr = std::min<int16_t>(usb_settings.dig_thr, max_vol);
+        int16_t const thr = std::max<int16_t>(std::min<int16_t>(usb_settings.dig_thr, max_vol), ASHA_USB_VOL_MIN);
         asha_vol = (int8_t)(std::max<int16_t>(level, thr) / ASHA_USB_VOL_RES);
         int const below = (int)level - thr; // negative under the threshold
         gain_q15 = (below >= 0)
             ? ASHA_DIGITAL_GAIN_UNITY
             : (uint32_t)lroundf(powf(10.0f, (float)below / (256.0f * 20.0f)) * (float)ASHA_DIGITAL_GAIN_UNITY);
     };
+#if ASHA_A2DP
+    // ---- USB audio and smartphone audio ------------------------------------
+    // Both sources are described by a level on the same scale (1/256 dB). The
+    // volume of the hearing aids follows the loudest of them, and each source
+    // is attenuated digitally by the difference.
+    //
+    // Transitions are staged so that audio already queued for the hearing aids
+    // never plays louder than intended:
+    //   Entering: the USB audio is lowered first, the phone is not mixed yet
+    //   On:       the hearing aids' volume follows the phone, phone mixed in
+    //   Leaving:  the phone fades out, the hearing aids' volume stays up
+    //   Off:      back to the USB audio alone
+    enum class PhoneStage { Off, Entering, On, Leaving };
+    static PhoneStage stage = PhoneStage::Off;
+    static uint32_t stage_since_ms = 0;
+    constexpr uint32_t entering_ms = 120;
+    constexpr uint32_t leaving_ms = 400;
+    uint32_t const now_ms = to_ms_since_boot(get_absolute_time());
+    bool const phone_now = asha_audio_phone_audible();
+    switch (stage) {
+        case PhoneStage::Off:
+            if (phone_now) { stage = PhoneStage::Entering; stage_since_ms = now_ms; }
+            break;
+        case PhoneStage::Entering:
+            if (!phone_now) { stage = PhoneStage::Off; }
+            else if (now_ms - stage_since_ms >= entering_ms) { stage = PhoneStage::On; }
+            break;
+        case PhoneStage::On:
+            if (!phone_now) { stage = PhoneStage::Leaving; stage_since_ms = now_ms; }
+            break;
+        case PhoneStage::Leaving:
+            if (phone_now) { stage = PhoneStage::On; }
+            else if (now_ms - stage_since_ms >= leaving_ms) { stage = PhoneStage::Off; }
+            break;
+    }
+
+    constexpr int no_signal = -1000000;
+    int const thr = std::max<int>(std::min<int>(usb_settings.dig_thr, max_vol), ASHA_USB_VOL_MIN);
+    PhoneSettings const ps = phone::settings;
+    int const duck_units = ps.duck * ASHA_USB_VOL_RES;
+    bool const duck_mute = ps.duck <= -240;
+    int const phone_level = std::min<int>(ps.level * ASHA_USB_VOL_RES, max_vol);
+    auto amplitude = [](int diff) -> uint32_t { // diff in 1/256 dB, at most 0
+        if (diff >= 0) return ASHA_DIGITAL_GAIN_UNITY;
+        return (uint32_t)lroundf(powf(10.0f, (float)diff / (256.0f * 20.0f)) * (float)ASHA_DIGITAL_GAIN_UNITY);
+    };
+    auto side_levels = [&](int16_t usb_vol, int8_t& vol, uint32_t& g_usb, uint32_t& g_phone) {
+        bool const muted = (usb_vol == ASHA_USB_VOL_MUTE);
+        int const usb_level = muted ? no_signal : (int)shape(usb_vol);
+        int const usb_ducked = (muted || duck_mute) ? no_signal : usb_level + duck_units;
+        int level = no_signal; // level the hearing aids' volume must reach
+        g_usb = 0;             // silent unless set below. Muted audio stays silent
+        g_phone = 0;           // digitally, so nothing queued is released later
+        switch (stage) {
+            case PhoneStage::Off:
+                if (!muted) { level = std::max(usb_level, thr); g_usb = amplitude(usb_level - level); }
+                break;
+            case PhoneStage::Entering:
+                if (!muted) {
+                    level = std::max(usb_level, thr);
+                    if (usb_ducked != no_signal) { g_usb = amplitude(usb_ducked - level); }
+                }
+                break;
+            case PhoneStage::On:
+                level = std::max({usb_ducked, phone_level, thr});
+                if (usb_ducked != no_signal) { g_usb = amplitude(usb_ducked - level); }
+                g_phone = amplitude(phone_level - level);
+                break;
+            case PhoneStage::Leaving:
+                level = std::max({usb_level, phone_level, thr});
+                if (usb_level != no_signal) { g_usb = amplitude(usb_level - level); }
+                g_phone = amplitude(phone_level - level);
+                break;
+        }
+        vol = (level == no_signal) ? (int8_t)volume_mute : (int8_t)(level / ASHA_USB_VOL_RES);
+    };
     int8_t vol_l = volume_mute;
     int8_t vol_r = volume_mute;
-    uint32_t gain_l = ASHA_DIGITAL_GAIN_UNITY;
-    uint32_t gain_r = ASHA_DIGITAL_GAIN_UNITY;
+    uint32_t gain_l = 0, gain_r = 0, phone_gain_l = 0, phone_gain_r = 0;
+    side_levels(usb_vol_l, vol_l, gain_l, phone_gain_l);
+    side_levels(usb_vol_r, vol_r, gain_r, phone_gain_r);
+    asha_audio_set_digital_gain(gain_l, gain_r);
+    asha_audio_set_phone_gain(phone_gain_l, phone_gain_r);
+    asha_audio_set_phone_mix(stage == PhoneStage::On);
+#else
+    // While muted the signal is silenced digitally too: audio already queued
+    // for the hearing aids must not be released, louder than the new level,
+    // at the moment the mute is lifted.
+    int8_t vol_l = volume_mute;
+    int8_t vol_r = volume_mute;
+    uint32_t gain_l = 0;
+    uint32_t gain_r = 0;
     if (usb_vol_l != ASHA_USB_VOL_MUTE) { split(usb_vol_l, vol_l, gain_l); }
     if (usb_vol_r != ASHA_USB_VOL_MUTE) { split(usb_vol_r, vol_r, gain_r); }
     asha_audio_set_digital_gain(gain_l, gain_r);
+#endif
     
     bool pcm_is_streaming = asha_audio_get_pcm_streaming_enabled();
 

@@ -31,6 +31,7 @@ namespace comm
         Cmd,
         Advert,
         USBInfo,
+        PhoneInfo,
     };
 
     enum class StatusType : uint8_t
@@ -111,6 +112,9 @@ namespace comm
         IntroPacket,
         PairBond,
         USBSettings,
+        PhonePairing,
+        PhoneForget,
+        PhoneSettings,
     };
 
     enum class CmdStatus : uint8_t
@@ -207,6 +211,20 @@ namespace comm
 
     static_assert(sizeof(RemoteInfo) == 184);
 
+    // State of the Bluetooth audio input (smartphone). Only sent by firmware
+    // built with PICO_ASHA_A2DP.
+    struct PhoneInfo
+    {
+        uint8_t flags;      // bit 0: pairing mode, bit 1: phone connected, bit 2: phone audio playing
+        uint8_t reserved;
+        int16_t duck;
+        int16_t level;
+        uint8_t addr[6];
+        char    name[28];
+    };
+
+    static_assert(sizeof(PhoneInfo) == 40);
+
     struct EventPacket
     {
         EventType ev_type = {};
@@ -270,6 +288,11 @@ namespace comm
                 uint8_t reserved[3];
             } pair_bond;
             USBInfo usb_settings;
+            bool      phone_pairing_enabled;
+            struct {
+                int16_t duck;   // USB attenuation while the phone plays, in 0.375 dB steps (-240 = mute)
+                int16_t level;  // level of the phone audio, in 0.375 dB steps
+            } phone_settings;
         } data;
     };
 
@@ -312,6 +335,7 @@ namespace comm
 
     void send_intro_packet(int8_t num_connections, uint16_t flags = 0x00);
     void send_usb_info_packet(USBInfo const& usb_info);
+    void send_phone_info_packet(PhoneInfo const& phone_info);
     void send_remote_info_packet(RemoteInfo const& remote_info);
     void send_advertising_packet(AdvertisingPacket const& ad_packet);
 

@@ -1,9 +1,17 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
+#endif
+
+// Bluetooth audio input (smartphone, A2DP), see phone_audio.hpp
+#if defined(PICO_ASHA_A2DP) && PICO_ASHA_A2DP
+#define ASHA_A2DP 1
+#else
+#define ASHA_A2DP 0
 #endif
 
 #define ASHA_G722_RING_SIZE 8u
@@ -108,6 +116,31 @@ void asha_audio_set_curr_usb_vol(int16_t main_vol, int16_t left_vol, int16_t rig
  * before encoding. Used for levels below the hearing aids' volume floor.
  */
 void asha_audio_set_digital_gain(uint32_t left_q15, uint32_t right_q15);
+
+#if ASHA_A2DP
+/**
+ * Smartphone audio. The Bluetooth core pushes decoded PCM; the USB core mixes
+ * it into the stream sent to the hearing aids.
+ */
+// Bluetooth core: decoded interleaved stereo frames at sample_rate Hz
+void asha_audio_phone_push(const int16_t* stereo, uint32_t frames, uint32_t sample_rate);
+// Bluetooth core: the A2DP stream started (true) or stopped/suspended (false)
+void asha_audio_phone_set_stream(bool started);
+// True while the phone is sending audible audio
+bool asha_audio_phone_audible(void);
+// Fade the phone audio in (true) or out (false)
+void asha_audio_set_phone_mix(bool on);
+// Digital gains (Q15) of the phone audio, left and right
+void asha_audio_set_phone_gain(uint32_t left_q15, uint32_t right_q15);
+// USB core: mix the phone audio with one millisecond of USB audio (usb may be
+// 16 or 48 samples). Fills out with 48 samples and returns true when the mix
+// must be used instead of the USB audio alone.
+struct PCMStereoSample;
+bool asha_audio_mix_phone(struct PCMStereoSample* usb, uint16_t usb_count, struct PCMStereoSample* out);
+// Encode 48 samples whose gains are already applied
+struct PCMStereoSample;
+void asha_audio_encode_1ms_pcm_scaled(struct PCMStereoSample* samples, uint16_t count);
+#endif
 
 /**
  * Get the current volume, as provided by USB

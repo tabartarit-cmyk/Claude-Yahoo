@@ -26,10 +26,12 @@ struct RuntimeSettings
     bool get_hci_dump_enabled();
     bool get_full_set_paired();
     USBSettings get_usb_settings();
+    PhoneSettings get_phone_settings();
 
     bool set_hci_dump_enabled(bool is_enabled);
     bool set_full_set_paired(bool have_full_set);
     bool set_usb_settings(USBSettings const& settings);
+    bool set_phone_settings(PhoneSettings const& settings);
 
     // Store a pending setting in watchdog scratch registers so it can be
     // written to TLV after the watchdog reboot, avoiding a race between the
@@ -45,6 +47,7 @@ private:
         HCIDump = str_to_tag("PAHC"),
         FullSetPaired = str_to_tag("PAFS"),
         USBSetting = str_to_tag("PAUS"),
+        PhoneSetting = str_to_tag("PAPH"),
     };
 
     // used to store remote device in TLV
@@ -56,6 +59,7 @@ private:
     bool hci_dump_enabled = false;
     bool full_set_paired = false;
     USBSettings usb_settings = {};
+    PhoneSettings phone_settings = {};
 
     mutex_t mtx = {};
 

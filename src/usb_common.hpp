@@ -20,5 +20,16 @@ namespace asha
         bool operator==(const USBSettings&) const = default;
     };
 
+    // Smartphone (Bluetooth audio input) settings. Steps are 0.375 dB.
+    struct PhoneSettings {
+        // Attenuation of the USB audio while the phone plays (-240 = muted)
+        int16_t duck = -240;
+        // Level of the phone audio, on the same scale as the USB volume
+        int16_t level = -100;
+
+        bool valid() const { return duck >= -240 && duck <= 0 && level >= -240 && level <= 0; }
+        bool operator==(const PhoneSettings&) const = default;
+    };
+
     extern USBSettings usb_settings;
 }

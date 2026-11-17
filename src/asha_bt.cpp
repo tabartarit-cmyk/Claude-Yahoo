@@ -8,6 +8,7 @@
 #include "asha_variant.hpp"
 #include "gatt_server.hpp"
 #include "hearing_aid.hpp"
+#include "phone_audio.hpp"
 #include "util.hpp"
 
 #ifdef PICO_ASHA_VARIANT_CLASSIC
@@ -146,6 +147,9 @@ extern "C" void bt_main()
     classic_probe_init();
 #endif
 
+    /* Smartphone audio input (A2DP sink), only in firmware built with PICO_ASHA_A2DP */
+    phone::init();
+
     /* Register notification listener */
     gatt_client_listen_for_characteristic_value_updates(
         &notification_listener, 
@@ -210,6 +214,17 @@ static void process_serial_cmds()
                     }
                 }
                 break;
+            case Command::PhonePairing:
+                phone::set_pairing(cmd_pkt.data.phone_pairing_enabled);
+                break;
+            case Command::PhoneForget:
+                phone::forget_all();
+                break;
+            case Command::PhoneSettings:
+                if (!phone::apply_settings(PhoneSettings{.duck = cmd_pkt.data.phone_settings.duck, .level = cmd_pkt.data.phone_settings.level})) {
+                    cmd_pkt.cmd_status = CmdStatus::CmdError;
+                }
+                break;
             default:
                 cmd_pkt.cmd_status = CmdStatus::CmdError;
                 break;
@@ -238,6 +253,7 @@ static void audio_timer_handler(btstack_timer_source_t* timer)
     if (comm::usb_connected()) {
         if (enable_send_intro_packet) {
             HearingAid::on_serial_host_connected();
+            phone::on_serial_connected();
             enable_send_intro_packet = false;
             usb_serial_is_connected = true;
         }
@@ -245,6 +261,7 @@ static void audio_timer_handler(btstack_timer_source_t* timer)
         usb_serial_is_connected = false;
     }
     if (usb_serial_is_connected) {
+        phone::service();
         comm::service_tx_queues();
     }
     HearingAid::process();

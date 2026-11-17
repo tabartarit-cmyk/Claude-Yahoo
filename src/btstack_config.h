@@ -26,6 +26,14 @@
 #endif
 #endif
 
+// Smartphone audio input (A2DP sink): the ASHA variant also uses Bluetooth
+// Classic when built with -DPICO_ASHA_A2DP=ON
+#if defined(PICO_ASHA_A2DP) && PICO_ASHA_A2DP
+#ifndef ENABLE_CLASSIC
+#define ENABLE_CLASSIC
+#endif
+#endif
+
 // Undocumented - temporary until Pico-ASHA moves to newer Pico SDK
 #define ENABLE_GATT_FIND_INFORMATION_FOR_CCC_DISCOVERY
 
@@ -35,8 +43,19 @@
 #define HCI_OUTGOING_PRE_BUFFER_SIZE 4
 #define HCI_ACL_PAYLOAD_SIZE (255 + 4)
 #define HCI_ACL_CHUNK_SIZE_ALIGNMENT 4
+#if defined(PICO_ASHA_A2DP) && PICO_ASHA_A2DP
+// 2 hearing aids (LE) + 1 phone (Classic ACL)
+#define MAX_NR_HCI_CONNECTIONS 4
+// 2 LE credit based channels + AVDTP signaling and media + SDP
+#define MAX_NR_L2CAP_CHANNELS 6
+#define MAX_NR_L2CAP_SERVICES 2
+#define MAX_NR_AVDTP_CONNECTIONS 1
+#define MAX_NR_AVDTP_STREAM_ENDPOINTS 1
+#define MAX_NR_SERVICE_RECORD_ITEMS 2
+#else
 #define MAX_NR_HCI_CONNECTIONS 2
 #define MAX_NR_L2CAP_CHANNELS 2
+#endif
 #define MAX_NR_SM_LOOKUP_ENTRIES 3
 #define MAX_NR_WHITELIST_ENTRIES 16
 #define MAX_NR_LE_DEVICE_DB_ENTRIES 16

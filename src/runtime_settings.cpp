@@ -51,6 +51,24 @@ USBSettings RuntimeSettings::get_usb_settings()
     return settings;
 }
 
+PhoneSettings RuntimeSettings::get_phone_settings()
+{
+    mutex_enter_blocking(&mtx);
+    PhoneSettings settings = phone_settings;
+    mutex_exit(&mtx);
+    return settings;
+}
+
+bool RuntimeSettings::set_phone_settings(PhoneSettings const& settings)
+{
+    if (!settings.valid()) return false;
+    mutex_enter_blocking(&mtx);
+    bool ok = store_tlv_tag(Tag::PhoneSetting, settings);
+    if (ok) phone_settings = settings;
+    mutex_exit(&mtx);
+    return ok;
+}
+
 RuntimeSettings::operator bool()
 {
     mutex_enter_blocking(&mtx);
@@ -65,6 +83,9 @@ RuntimeSettings::operator bool()
    to make updating default settings easier */
 void RuntimeSettings::get_settings()
 {
+    if (!get_tlv_tag(Tag::PhoneSetting, phone_settings) || !phone_settings.valid()) {
+        phone_settings = PhoneSettings{};
+    }
     if (!get_tlv_tag(Tag::HCIDump, hci_dump_enabled)) {
         hci_dump_enabled = false;
     }

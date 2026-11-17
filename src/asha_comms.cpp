@@ -53,6 +53,7 @@ namespace comm
         COBS_ENCODE_MAX(sizeof(HeaderPacket) + sizeof(CmdPacket)),
         COBS_ENCODE_MAX(sizeof(HeaderPacket) + sizeof(IntroPacket)),
         COBS_ENCODE_MAX(sizeof(HeaderPacket) + sizeof(USBInfo)),
+        COBS_ENCODE_MAX(sizeof(HeaderPacket) + sizeof(PhoneInfo)),
         COBS_ENCODE_MAX(sizeof(HeaderPacket) + sizeof(RemoteInfo))
     });
     constexpr size_t advertising_frame_size = zero_prefix + COBS_ENCODE_MAX(sizeof(HeaderPacket) + sizeof(AdvertisingPacket));
@@ -230,6 +231,11 @@ namespace comm
     void send_usb_info_packet(USBInfo const &usb_info)
     {
         construct_and_queue_packet(Type::USBInfo, unset_conn_id, usb_info, control_tx_queue);
+    }
+
+    void send_phone_info_packet(PhoneInfo const& phone_info)
+    {
+        construct_and_queue_packet(Type::PhoneInfo, unset_conn_id, phone_info, control_tx_queue);
     }
 
     void send_remote_info_packet(RemoteInfo const& remote_info)
