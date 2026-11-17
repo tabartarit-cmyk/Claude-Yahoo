@@ -21,8 +21,8 @@ static constexpr uint32_t pairing_duration_ms = 120000;
 static constexpr uint32_t media_header_len = 12; // RTP header without CSRC
 static constexpr uint32_t sbc_header_len = 1;
 
-// SBC: 16 kHz, Stereo / Joint Stereo, 16 blocks, 8 subbands, Loudness, bitpool 2..58 (~128-129 kbps total, ~64 kbps/ch)
-static uint8_t sbc_capabilities[] = {0x83, 0x15, 2, 58};
+// SBC: every configuration with a bitpool of 2 to 53
+static uint8_t sbc_capabilities[] = {0xFF, 0xFF, 2, 53};
 static uint8_t sbc_configuration[4];
 
 static btstack_packet_callback_registration_t hci_callback;
