@@ -196,7 +196,6 @@ uint8_t* asha_audio_get_encoded_at_index(enum AshaAudioSide side, uint32_t index
     return side == AudioLeft ? buff->l : buff->r;
 }
 
-#ifdef PICO_ASHA_ENC_STATS
 void asha_audio_encode_1ms_pcm(struct PCMStereoSample *samples, uint16_t count)
 {
     encode_pcm(samples, count, true);
@@ -209,6 +208,7 @@ void asha_audio_encode_1ms_pcm_scaled(struct PCMStereoSample *samples, uint16_t 
 }
 #endif
 
+#ifdef PICO_ASHA_ENC_STATS
 int16_t* asha_audio_get_encoding_time_at_index(uint32_t index)
 {
     return (&enc_ring_buff[ring_buff_index(index)])->encode_times;
