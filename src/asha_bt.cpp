@@ -221,7 +221,7 @@ static void process_serial_cmds()
                 phone::forget_all();
                 break;
             case Command::PhoneSettings:
-                if (!phone::apply_settings(PhoneSettings{.duck = cmd_pkt.data.phone_settings.duck, .level = cmd_pkt.data.phone_settings.level})) {
+                if (!phone::apply_settings(PhoneSettings{.duck = cmd_pkt.data.phone_settings.duck, .level = cmd_pkt.data.phone_settings.level, .profile = cmd_pkt.data.phone_settings.profile})) {
                     cmd_pkt.cmd_status = CmdStatus::CmdError;
                 }
                 break;

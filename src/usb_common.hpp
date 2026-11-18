@@ -26,8 +26,11 @@ namespace asha
         int16_t duck = -240;
         // Level of the phone audio, on the same scale as the USB volume
         int16_t level = -100;
+        // Bluetooth quality offered to the phone, applied at the next start:
+        // 0 standard, 1 economic, 2 minimal (mono), 3 16 kHz mono (experimental)
+        uint8_t profile = 0;
 
-        bool valid() const { return duck >= -240 && duck <= 0 && level >= -240 && level <= 0; }
+        bool valid() const { return duck >= -240 && duck <= 0 && level >= -240 && level <= 0 && profile <= 3; }
         bool operator==(const PhoneSettings&) const = default;
     };
 

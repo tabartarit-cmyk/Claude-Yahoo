@@ -235,11 +235,15 @@ void asha_audio_set_digital_gain(uint32_t left_q15, uint32_t right_q15)
 // (USB core). The ring holds decoded stereo frames at the phone's sample rate;
 // the consumer resamples to 48 kHz with linear interpolation.
 // ---------------------------------------------------------------------------
-#define PHONE_RING_FRAMES 4096u            // power of two
+#define PHONE_RING_FRAMES 16384u           // power of two, about 340 ms at 48 kHz
 #define PHONE_RING_MASK (PHONE_RING_FRAMES - 1u)
-#define PHONE_PRIME_FRAMES 1024u           // start playing after about 23 ms
-#define PHONE_MAX_FRAMES 2400u             // above this, drop the oldest audio
-#define PHONE_KEEP_FRAMES 1200u
+// Jitter buffer, in fractions of a second of audio at the phone's sample rate.
+// The radio is shared with the hearing aids, so A2DP packets can arrive late
+// or in bursts: the target is about 100 ms of audio.
+#define PHONE_TARGET_DIV 10u               // target fill: rate / 10
+#define PHONE_HIGH_FACTOR 3u               // above 3 x target, drop the oldest audio
+#define PHONE_KEEP_NUM 3u                  // ... and keep 3/2 x target
+#define PHONE_KEEP_DEN 2u
 #define PHONE_AUDIBLE_PEAK 64              // about -54 dBFS
 #define PHONE_HOLD_MS 1500u                // silence tolerated before the phone is "not playing"
 #define PHONE_FADE_UP_STEP 34              // about 20 ms
@@ -257,6 +261,7 @@ static atomic_uint_fast32_t pgain_r = ASHA_DIGITAL_GAIN_UNITY;
 
 // consumer state (USB core only)
 static bool rs_primed;
+static bool rs_underrun;                   // the last stop was an underrun: refill less
 static int16_t rs_pl, rs_pr, rs_cl, rs_cr;
 static uint32_t rs_frac;
 static uint32_t quiet_ms;
@@ -326,6 +331,7 @@ static bool phone_next_frame(void)
 static void phone_reset_consumer(void)
 {
     rs_primed = false;
+    rs_underrun = false;
     rs_pl = rs_pr = rs_cl = rs_cr = 0;
     rs_frac = 0;
     quiet_ms = PHONE_HOLD_MS;
@@ -345,22 +351,41 @@ bool asha_audio_mix_phone(struct PCMStereoSample* usb, uint16_t usb_count, struc
         if (phone_fade == 0) return false;
     }
 
-    // Keep the phone buffer short: drop the oldest audio if it has grown
+    uint32_t const rate = phone_rate;
+    uint32_t const jb_target = rate / PHONE_TARGET_DIV;
     uint32_t avail = phone_w - phone_r;
-    if (stream_on && avail > PHONE_MAX_FRAMES) {
-        phone_r = phone_w - PHONE_KEEP_FRAMES;
-        avail = PHONE_KEEP_FRAMES;
+    // Too much audio queued: drop the oldest
+    if (stream_on && avail > PHONE_HIGH_FACTOR * jb_target) {
+        uint32_t const keep = jb_target * PHONE_KEEP_NUM / PHONE_KEEP_DEN;
+        phone_r = phone_w - keep;
+        avail = keep;
     }
-    if (stream_on && !rs_primed && avail >= PHONE_PRIME_FRAMES) {
+    // Start playing once the jitter buffer is filled (half of it after an underrun)
+    if (stream_on && !rs_primed && avail >= (rs_underrun ? jb_target / 2u : jb_target)) {
         rs_primed = true;
+        rs_underrun = false;
         rs_frac = 1u << 16; // load the first frame on the first output sample
     }
 
     int32_t peak = 0;
-    uint32_t const step = (uint32_t)(((uint64_t)phone_rate << 16) / 48000u);
+    uint32_t step = (uint32_t)(((uint64_t)rate << 16) / 48000u);
+    if (rs_primed && jb_target > 0) {
+        // Follow the phone's clock: consume slightly faster when the buffer is
+        // above its target and slower when it is below (at most 1 %)
+        int64_t const err = (int64_t)avail - (int64_t)jb_target;
+        int64_t delta = (int64_t)step * err / ((int64_t)jb_target * 100);
+        int64_t const limit = (int64_t)step / 100;
+        if (delta > limit) delta = limit;
+        if (delta < -limit) delta = -limit;
+        step = (uint32_t)((int64_t)step + delta);
+    }
     uint32_t const gl = pgain_l, gr = pgain_r;
     uint32_t const ug_l = gain_l, ug_r = gain_r;
     int32_t const target = mix_on ? (int32_t)ASHA_DIGITAL_GAIN_UNITY : 0;
+    // The USB samples are not touched at all while the phone is the only source
+    // (USB gains at zero). The USB stream itself must still be received and
+    // drained by the caller: the host needs it to keep its clock in step.
+    bool const use_usb = usb && usb_count == ASHA_PCM_MAX_SAMPLES && (ug_l != 0 || ug_r != 0);
 
     for (unsigned int i = 0; i < ASHA_PCM_MAX_SAMPLES; ++i) {
         // phone sample at 48 kHz
@@ -371,6 +396,7 @@ bool asha_audio_mix_phone(struct PCMStereoSample* usb, uint16_t usb_count, struc
                 if (!phone_next_frame()) {
                     // underrun: hold the last frame and wait for more audio
                     rs_primed = false;
+                    rs_underrun = true;
                     break;
                 }
             }
@@ -397,7 +423,7 @@ bool asha_audio_mix_phone(struct PCMStereoSample* usb, uint16_t usb_count, struc
 
         // USB sample (already 48 kHz) with the USB gains
         int32_t ul = 0, ur = 0;
-        if (usb && usb_count == ASHA_PCM_MAX_SAMPLES) {
+        if (use_usb) {
             ul = apply_gain(usb[i].left, ug_l);
             ur = apply_gain(usb[i].right, ug_r);
         }

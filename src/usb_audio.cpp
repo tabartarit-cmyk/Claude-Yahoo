@@ -351,7 +351,7 @@ static bool audio10_get_req_entity(uint8_t rhport, tusb_control_request_t const 
 //--------------------------------------------------------------------+
 
 // List of supported sample rates for UAC2
-const uint32_t sample_rates[] = {16000};
+const uint32_t sample_rates[] = {16000, 48000};
 
 #define N_SAMPLE_RATES TU_ARRAY_SIZE(sample_rates)
 
@@ -606,7 +606,12 @@ extern "C" bool tud_audio_rx_done_isr(uint8_t rhport, uint16_t n_bytes_received,
 
 // Encode one millisecond of USB audio, mixed with the smartphone audio when
 // the phone is playing (firmware built with PICO_ASHA_A2DP).
-static void encode_with_phone(PCMStereoSample* usb, uint16_t count)
+//
+// usb_streaming: 1 or 0 sets the PCM streaming flag for the USB audio, -1 leaves
+// it unchanged. The flag is written exactly once per millisecond: writing false
+// and then true within the same tick made the Bluetooth core see the stream
+// stop and restart at random, which sounded like stuttering.
+static void encode_with_phone(PCMStereoSample* usb, uint16_t count, int usb_streaming)
 {
 #if ASHA_A2DP
   static PCMStereoSample mixed[ASHA_PCM_MAX_SAMPLES];
@@ -617,6 +622,9 @@ static void encode_with_phone(PCMStereoSample* usb, uint16_t count)
     return;
   }
 #endif
+  if (usb_streaming >= 0) {
+    asha_audio_set_pcm_streaming_enabled(usb_streaming != 0);
+  }
   asha_audio_encode_1ms_pcm(usb, count);
 }
 
@@ -649,20 +657,20 @@ static void audio_task()
       } else {
         silence_counter = 0;
       }
-      asha_audio_set_pcm_streaming_enabled((silence_counter >= silence_timeout) ? false : true);
-      encode_with_phone(spk_buf, samples);
+      encode_with_phone(spk_buf, samples, (silence_counter >= silence_timeout) ? 0 : 1);
       return;
     }
   }
 
+  int usb_streaming = -1; // unchanged
   if (absolute_time_diff_us(last_pcm_packet_time, now) >= audio_packet_timeout_us) {
     // A new run of zero PCM after the host restarts should get its own full
     // silence interval, rather than inheriting the previous stream's count.
     silence_counter = 0;
-    asha_audio_set_pcm_streaming_enabled(false);
+    usb_streaming = 0;
   }
   // Continue encoding silence while the USB FIFO catches up or the host stops.
-  encode_with_phone(silence_buff, ASHA_PCM_PACKET_SIZE);
+  encode_with_phone(silence_buff, ASHA_PCM_PACKET_SIZE, usb_streaming);
 }
 
 } // namespace asha

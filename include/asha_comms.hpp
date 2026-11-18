@@ -216,7 +216,7 @@ namespace comm
     struct PhoneInfo
     {
         uint8_t flags;      // bit 0: pairing mode, bit 1: phone connected, bit 2: phone audio playing
-        uint8_t reserved;
+        uint8_t profile;    // Bluetooth quality profile in use
         int16_t duck;
         int16_t level;
         uint8_t addr[6];
@@ -292,6 +292,7 @@ namespace comm
             struct {
                 int16_t duck;   // USB attenuation while the phone plays, in 0.375 dB steps (-240 = mute)
                 int16_t level;  // level of the phone audio, in 0.375 dB steps
+                uint8_t profile; // Bluetooth quality profile (see PhoneSettings)
             } phone_settings;
         } data;
     };

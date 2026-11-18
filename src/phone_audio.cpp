@@ -21,9 +21,38 @@ static constexpr uint32_t pairing_duration_ms = 120000;
 static constexpr uint32_t media_header_len = 12; // RTP header without CSRC
 static constexpr uint32_t sbc_header_len = 1;
 
-// SBC: every configuration with a bitpool of 2 to 53
-static uint8_t sbc_capabilities[] = {0xFF, 0xFF, 2, 53};
+// SBC capabilities offered to the phone. The phone, not the Pico, picks the
+// configuration among them, so a profile can only limit the choice:
+//   0 standard:  everything (about 330 kbps at most)
+//   1 economic:  44.1/48 kHz, bitpool up to 32 (about 210 kbps)
+//   2 minimal:   44.1/48 kHz mono, bitpool up to 24 (about 150 kbps)
+//   3 16 kHz mono, bitpool up to 32 (about 70 kbps). Most phones only offer
+//     44.1 and 48 kHz and will refuse this one.
+static uint8_t sbc_capabilities[4] = {0xFF, 0xFF, 2, 53};
 static uint8_t sbc_configuration[4];
+
+static void select_capabilities(uint8_t profile)
+{
+    uint8_t const any_blocks = 0xFF; // block lengths, subbands, allocation methods
+    uint8_t const hz_44_48 = (uint8_t)((AVDTP_SBC_44100 | AVDTP_SBC_48000) << 4);
+    switch (profile) {
+        case 1:
+            sbc_capabilities[0] = (uint8_t)(hz_44_48 | AVDTP_SBC_MONO | AVDTP_SBC_STEREO | AVDTP_SBC_JOINT_STEREO);
+            sbc_capabilities[1] = any_blocks; sbc_capabilities[2] = 2; sbc_capabilities[3] = 32;
+            break;
+        case 2:
+            sbc_capabilities[0] = (uint8_t)(hz_44_48 | AVDTP_SBC_MONO);
+            sbc_capabilities[1] = any_blocks; sbc_capabilities[2] = 2; sbc_capabilities[3] = 24;
+            break;
+        case 3:
+            sbc_capabilities[0] = (uint8_t)((AVDTP_SBC_16000 << 4) | AVDTP_SBC_MONO);
+            sbc_capabilities[1] = any_blocks; sbc_capabilities[2] = 2; sbc_capabilities[3] = 32;
+            break;
+        default:
+            sbc_capabilities[0] = 0xFF; sbc_capabilities[1] = 0xFF; sbc_capabilities[2] = 2; sbc_capabilities[3] = 53;
+            break;
+    }
+}
 
 static btstack_packet_callback_registration_t hci_callback;
 static uint8_t sdp_sink_record[150];
@@ -186,6 +215,7 @@ bool apply_settings(PhoneSettings const& new_settings)
 void init()
 {
     settings = runtime_settings.get_phone_settings();
+    select_capabilities(settings.profile);
 
     // Keep the link keys of paired phones in flash, next to the other settings
     const btstack_tlv_t* tlv_impl = nullptr;
@@ -238,6 +268,7 @@ static void send_info()
 {
     comm::PhoneInfo info = {};
     info.flags = (uint8_t)((pairing_mode ? 1 : 0) | (phone_connected ? 2 : 0) | (asha_audio_phone_audible() ? 4 : 0));
+    info.profile = settings.profile;
     info.duck = settings.duck;
     info.level = settings.level;
     std::memcpy(info.addr, phone_addr, sizeof(info.addr));
